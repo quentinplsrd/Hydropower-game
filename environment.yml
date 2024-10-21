@@ -1,0 +1,12 @@
+name: Hydrogame
+channels:
+  - defaults
+dependencies:
+  - numpy
+  - pandas
+  - matplotlib
+  - pyqt
+  - pyinstaller
+  - pip
+  - pip: 
+    - ortools
