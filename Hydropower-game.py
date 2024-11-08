@@ -49,7 +49,7 @@ class BarGraphCanvas(FigureCanvas):
         self.setParent(parent)
         self.on_update_callback = on_update_callback  # Callback for updating total sum
         
-        self.y_values = 0.5*np.ones(N_timesteps)
+        self.y_values = (TARGET/N_timesteps)*np.ones(N_timesteps)
         
         self.start_time = time.time()
         
@@ -58,6 +58,8 @@ class BarGraphCanvas(FigureCanvas):
         self.price_line = self.ax.plot(price_values, color='k')
         
         self.total_revenue = sum(self.y_values*price_values)
+        
+        self.solution_checked = False
         
         # self.ax.set_ylabel('Hourly release (AF/hr)')
         # self.ax.set_xlabel('Hours')
@@ -245,9 +247,10 @@ Jonghwan Kwon 'JK', Matt Mahalik, Tom Veselka, Bree Mendlin""", self.central_wid
         self.max_ramp_down_bar_graph.draw_total_bar(maximum_ramp_down_rate, 'Maximum ramp down', max_ramp_down, 'Ramp down limit', 'leq')
 
     def initialize_action(self):
-        self.bar_graph.y_values = 0.5*np.ones(N_timesteps)
+        self.bar_graph.y_values = (TARGET/N_timesteps)*np.ones(N_timesteps)
         self.bar_graph.update_chart(from_pick=False)
         self.bar_graph.start_time = time.time()
+        self.bar_graph.solution_checked = False
         # self.total_bar_graph.y_values = np.array([result.variable_values()[release[h]] for h in hours])
 
     def check_action(self):
@@ -257,6 +260,7 @@ Jonghwan Kwon 'JK', Matt Mahalik, Tom Veselka, Bree Mendlin""", self.central_wid
         feasibility_text = "The solution is not feasible, try again...\n"
         percent_solution_text = ""
         time_to_find_text = ""
+        self.bar_graph.solution_checked = True
         if self.bar_graph.feasible_solution:
             feasibility_text = "The solution is feasible, great!\n"
             percent_solution_text = f"You are {percent_solution:.0f}% close to the optimal solution!\n"
@@ -265,15 +269,19 @@ Jonghwan Kwon 'JK', Matt Mahalik, Tom Veselka, Bree Mendlin""", self.central_wid
         self.show_message(feasibility_text+percent_solution_text+time_to_find_text)
 
     def optimize_action(self):
-        self.bar_graph.start_time = time.time()
-        if result.termination.reason == mathopt.TerminationReason.OPTIMAL:
-            optimal_value = result.objective_value()
-            self.bar_graph.y_values = np.array([result.variable_values()[release[h]] for h in hours])
-            self.bar_graph.update_chart(from_pick=False)
-            # self.total_bar_graph.y_values = np.array([result.variable_values()[release[h]] for h in hours])
-            self.show_message(f"The optimal solution is {optimal_value:.2f}")
+        if self.bar_graph.solution_checked:
+            self.bar_graph.start_time = time.time()
+            if result.termination.reason == mathopt.TerminationReason.OPTIMAL:
+                # optimal_value = result.objective_value()
+                self.bar_graph.y_values = np.array([result.variable_values()[release[h]] for h in hours])
+                self.bar_graph.update_chart(from_pick=False)
+                # self.total_bar_graph.y_values = np.array([result.variable_values()[release[h]] for h in hours])
+                # self.show_message(f"The optimal solution is {optimal_value:.2f}")
+            else:
+                self.show_message("The model was infeasible.")
         else:
-            self.show_message("The model was infeasible.")
+            self.show_message("Try to find the solution by yourself first!\n"+
+                              "Click 'Check' to check your solution and optimize later.")
             
     def show_message(self, message):
         # Create a message box for displaying the result

@@ -1,1 +1,1 @@
-pyinstaller --onefile --noconsole --icon=Picture1.ico Test_interactive_graph.py
+pyinstaller --onefile --noconsole --icon=Picture1.ico Hydropower-game.py
