@@ -1,4 +1,5 @@
 import sys
+import time
 import numpy as np
 from PyQt5.QtWidgets import QPushButton, QMessageBox, QApplication, QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QLabel
 from PyQt5.QtCore import Qt
@@ -21,7 +22,7 @@ min_release = 0.2
 max_ramp_up = 0.2
 max_ramp_down = 0.3
 target_tol = 0.1
-price_values = 0.5 + 0.25*np.sin(3*np.pi*hours/N_timesteps)
+price_values = 0.02*np.array([20,18,17,16,18,25,30,35,32,30,28,27,28,30,32,35,40,45,42,38,35,30,25,22])
 
 # build optimization model
 model = mathopt.Model(name="game")
@@ -50,9 +51,13 @@ class BarGraphCanvas(FigureCanvas):
         
         self.y_values = 0.5*np.ones(N_timesteps)
         
+        self.start_time = time.time()
+        
         self.ax = self.fig.add_subplot(111)
         self.bars = self.ax.bar(hours, self.y_values, color='#1f77b4')
         self.price_line = self.ax.plot(price_values, color='k')
+        
+        self.total_revenue = sum(self.y_values*price_values)
         
         # self.ax.set_ylabel('Hourly release (AF/hr)')
         # self.ax.set_xlabel('Hours')
@@ -79,19 +84,24 @@ class BarGraphCanvas(FigureCanvas):
         self.y_value_texts = [self.ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(), f'{bar.get_height():.2f}', 
                                           ha='center', va='bottom') for bar in self.bars]
         self.ax.legend()
-        self.ax.set_ylim(0, 1.5)
+        self.ax.set_ylim(0, 2.5)
         self.draw()
         
         if self.on_update_callback:
             # total_sum = sum(bar.get_height() for bar in self.bars)
-            total_sum = sum(self.y_values)
-            total_revenue = sum(self.y_values*price_values)
-            minimum_release_rate = np.min(self.y_values)
-            ramp_rate = np.roll(self.y_values, -1) - self.y_values
-            maximum_ramp_up_rate = np.max(ramp_rate)
-            maximum_ramp_down_rate = np.max(-ramp_rate)
-            self.on_update_callback(total_sum, total_revenue, minimum_release_rate, maximum_ramp_up_rate, maximum_ramp_down_rate)  # Trigger callback to update sum bar
+            self.total_sum = sum(self.y_values)
+            self.total_revenue = sum(self.y_values*price_values)
+            self.minimum_release_rate = np.min(self.y_values)
+            self.ramp_rate = np.roll(self.y_values, -1) - self.y_values
+            self.maximum_ramp_up_rate = np.max(self.ramp_rate)
+            self.maximum_ramp_down_rate = np.max(-self.ramp_rate)
+            self.on_update_callback(self.total_sum, self.total_revenue, self.minimum_release_rate, self.maximum_ramp_up_rate, self.maximum_ramp_down_rate)  # Trigger callback to update sum bar
             # self.on_update_callback(total_revenue)  # Trigger callback to update revenue bar
+            self.feasible_minimum_release_rate = (self.minimum_release_rate >= min_release - 0.1*target_tol).all()
+            self.feasible_maximum_ramp_up_rate = (self.maximum_ramp_up_rate <= max_ramp_up + 0.1*target_tol).all()
+            self.feasible_maximum_ramp_down_rate = (self.maximum_ramp_down_rate <= max_ramp_down + 0.1*target_tol).all()
+            self.feasible_total_sum = (self.total_sum - TARGET <= target_tol) & (self.total_sum - TARGET >= -target_tol)
+            self.feasible_solution = self.feasible_minimum_release_rate & self.feasible_maximum_ramp_up_rate & self.feasible_maximum_ramp_down_rate & self.feasible_total_sum
     
     def on_click(self, event):
         if event.inaxes != self.ax:
@@ -180,12 +190,16 @@ maximum ramp up and maximum ramp down""", self.central_widget)
         main_layout.addWidget(self.game_instructions)
         
         # Create an "Initialize" button at the top
-        self.initialize_button = QPushButton("Initialize", self.central_widget)
-        self.initialize_button.clicked.connect(self.initialize_action)  # Connect to an action (yet to be defined)
+        self.initialize_button = QPushButton("Start", self.central_widget)
+        self.initialize_button.clicked.connect(self.initialize_action)  # Connect to an action
         # Create an "Optimize" button at the top
         self.optimize_button = QPushButton("Optimize", self.central_widget)
-        self.optimize_button.clicked.connect(self.optimize_action)  # Connect to an action (yet to be defined)
+        self.optimize_button.clicked.connect(self.optimize_action)  # Connect to an action
+        # Create a "Check" button
+        self.check_button = QPushButton("Check solution", self.central_widget)
+        self.check_button.clicked.connect(self.check_action)  # Connect to an action
         buttons_layout.addWidget(self.initialize_button)
+        buttons_layout.addWidget(self.check_button)
         buttons_layout.addWidget(self.optimize_button)
         
         main_layout.addLayout(buttons_layout)
@@ -214,8 +228,9 @@ maximum ramp up and maximum ramp down""", self.central_widget)
         main_layout.addLayout(rules_layout)
 
         # Create a QLabel to display credit text and add it to the main layout
-        self.credit_label = QLabel("""Developped by Argonne National Laboratory, Hydropower team:
-Quentin Ploussard, Cathy Milostan, Jonghwan Kwon 'JK', Matt Mahalik, Tom Veselka""", self.central_widget)
+        self.credit_label = QLabel("""A WPTO-funded ANL-NREL outreach project:
+Quentin Ploussard, Elise DeGeorge, Cathy Milostan, 
+Jonghwan Kwon 'JK', Matt Mahalik, Tom Veselka, Bree Mendlin""", self.central_widget)
         self.credit_label.setAlignment(Qt.AlignLeft)  # Align text to the left
         main_layout.addWidget(self.credit_label)
     
@@ -232,9 +247,25 @@ Quentin Ploussard, Cathy Milostan, Jonghwan Kwon 'JK', Matt Mahalik, Tom Veselka
     def initialize_action(self):
         self.bar_graph.y_values = 0.5*np.ones(N_timesteps)
         self.bar_graph.update_chart(from_pick=False)
+        self.bar_graph.start_time = time.time()
         # self.total_bar_graph.y_values = np.array([result.variable_values()[release[h]] for h in hours])
 
+    def check_action(self):
+        optimal_value = result.objective_value()
+        percent_solution = 100*self.bar_graph.total_revenue/optimal_value
+        time_to_find = time.time() - self.bar_graph.start_time
+        feasibility_text = "The solution is not feasible, try again...\n"
+        percent_solution_text = ""
+        time_to_find_text = ""
+        if self.bar_graph.feasible_solution:
+            feasibility_text = "The solution is feasible, great!\n"
+            percent_solution_text = f"You are {percent_solution:.0f}% close to the optimal solution!\n"
+            time_to_find_text = f"Time to find: {time_to_find:.0f}s"
+        self.bar_graph.start_time = time.time()
+        self.show_message(feasibility_text+percent_solution_text+time_to_find_text)
+
     def optimize_action(self):
+        self.bar_graph.start_time = time.time()
         if result.termination.reason == mathopt.TerminationReason.OPTIMAL:
             optimal_value = result.objective_value()
             self.bar_graph.y_values = np.array([result.variable_values()[release[h]] for h in hours])
