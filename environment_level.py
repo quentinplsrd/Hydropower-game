@@ -4,27 +4,6 @@ import numpy as np
 import pygame
 from ortools.math_opt.python import mathopt
 
-# Helper function to draw a dashed line in Pygame.
-def draw_dashed_line(surface, color, start_pos, end_pos, width=1, dash_length=10, space_length=5):
-    x1, y1 = start_pos
-    x2, y2 = end_pos
-    dx = x2 - x1
-    dy = y2 - y1
-    line_length = (dx**2 + dy**2) ** 0.5
-    dash_gap = dash_length + space_length
-    num_dashes = int(line_length / dash_gap)
-    for i in range(num_dashes + 1):
-        start_fraction = i * dash_gap / line_length
-        end_fraction = min((i * dash_gap + dash_length) / line_length, 1)
-        start_x = x1 + dx * start_fraction
-        start_y = y1 + dy * start_fraction
-        end_x = x1 + dx * end_fraction
-        end_y = y1 + dy * end_fraction
-        pygame.draw.line(surface, color, (start_x, start_y), (end_x, end_y), width)
-
-# --------------------------
-# Problem parameters & OR-Tools model setup
-# --------------------------
 N_timesteps = 24
 hours = np.arange(N_timesteps)
 TARGET = 16  # Daily release value
@@ -37,7 +16,6 @@ price_values = 0.02 * np.array(
      28, 30, 32, 35, 40, 45, 42, 38, 35, 30, 25, 22]
 )
 
-# Build the OR-Tools optimization model
 model = mathopt.Model(name="game")
 release = [model.add_variable(lb=0.0) for _ in hours]
 model.maximize(sum([release[h] * price_values[h] for h in hours]))
@@ -54,10 +32,6 @@ optimal_value = 0
 if result.termination.reason == mathopt.TerminationReason.OPTIMAL:
     optimal_value = result.objective_value()
 
-# --------------------------
-# Pygame-based GUI with centered buttons on top of the central bar graph
-# and extended vertical panel graphs.
-# --------------------------
 class HydropowerGame:
     def __init__(self):
         pygame.init()
@@ -349,7 +323,7 @@ class HydropowerGame:
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     self.message = ""
-
+                    
     def run(self):
         while self.running:
             self.handle_events()
@@ -367,6 +341,23 @@ class HydropowerGame:
             self.clock.tick(60)
         pygame.quit()
 
+def draw_dashed_line(surface, color, start_pos, end_pos, width=1, dash_length=10, space_length=5):
+    x1, y1 = start_pos
+    x2, y2 = end_pos
+    dx = x2 - x1
+    dy = y2 - y1
+    line_length = (dx**2 + dy**2) ** 0.5
+    dash_gap = dash_length + space_length
+    num_dashes = int(line_length / dash_gap)
+    for i in range(num_dashes + 1):
+        start_fraction = i * dash_gap / line_length
+        end_fraction = min((i * dash_gap + dash_length) / line_length, 1)
+        start_x = x1 + dx * start_fraction
+        start_y = y1 + dy * start_fraction
+        end_x = x1 + dx * end_fraction
+        end_y = y1 + dy * end_fraction
+        pygame.draw.line(surface, color, (start_x, start_y), (end_x, end_y), width)
+        
 def main():
     game = HydropowerGame()
     game.run()
