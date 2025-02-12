@@ -5,6 +5,24 @@ import pygame
 import textwrap
 from ortools.math_opt.python import mathopt
 
+def draw_dashed_line(surface, color, start_pos, end_pos, width=1, dash_length=10, space_length=5):
+    x1, y1 = start_pos
+    x2, y2 = end_pos
+    dx = x2 - x1
+    dy = y2 - y1
+    line_length = (dx**2 + dy**2) ** 0.5
+    dash_gap = dash_length + space_length
+    num_dashes = int(line_length / dash_gap)
+    for i in range(num_dashes + 1):
+        start_fraction = i * dash_gap / line_length
+        end_fraction = min((i * dash_gap + dash_length) / line_length, 1)
+        start_x = x1 + dx * start_fraction
+        start_y = y1 + dy * start_fraction
+        end_x = x1 + dx * end_fraction
+        end_y = y1 + dy * end_fraction
+        pygame.draw.line(surface, color, (start_x, start_y), (end_x, end_y), width)
+
+
 N_timesteps = 24
 hours = np.arange(N_timesteps)
 TARGET = 16  # Daily release value
@@ -139,7 +157,7 @@ class HydropowerGame:
         revenue_pct = 0
         if optimal_value:
             revenue_pct = 100 * self.total_revenue / optimal_value
-        color = (0, 200, 0) if revenue_pct > 84 else (200, 0, 0)
+        color = (0, 200, 0) if revenue_pct >= 85 else (200, 0, 0)
         pct_text = self.font.render(f"Optimality: {revenue_pct:.0f}%", True, color)
         pct_rect = pct_text.get_rect(topright=(self.window_width - 20, timer_rect.bottom + 5))
         self.screen.blit(pct_text, pct_rect)
@@ -328,7 +346,7 @@ class HydropowerGame:
         self.update_metrics()
         percent_solution = 100 * self.total_revenue / optimal_value if optimal_value != 0 else 0
         time_to_find = time.time() - self.start_time
-        if percent_solution > 84:
+        if percent_solution >= 85:
             self.message = (f"Solution is feasible!\n"
                             f"You are {percent_solution:.0f}% close to the optimal solution.\n"
                             f"Time to find: {time_to_find:.0f}s")
@@ -418,26 +436,10 @@ class HydropowerGame:
             self.clock.tick(60)
         pygame.quit()
 
-def draw_dashed_line(surface, color, start_pos, end_pos, width=1, dash_length=10, space_length=5):
-    x1, y1 = start_pos
-    x2, y2 = end_pos
-    dx = x2 - x1
-    dy = y2 - y1
-    line_length = (dx**2 + dy**2) ** 0.5
-    dash_gap = dash_length + space_length
-    num_dashes = int(line_length / dash_gap)
-    for i in range(num_dashes + 1):
-        start_fraction = i * dash_gap / line_length
-        end_fraction = min((i * dash_gap + dash_length) / line_length, 1)
-        start_x = x1 + dx * start_fraction
-        start_y = y1 + dy * start_fraction
-        end_x = x1 + dx * end_fraction
-        end_y = y1 + dy * end_fraction
-        pygame.draw.line(surface, color, (start_x, start_y), (end_x, end_y), width)
-
 def main():
     game = HydropowerGame()
     game.run()
 
 if __name__ == "__main__":
     main()
+
