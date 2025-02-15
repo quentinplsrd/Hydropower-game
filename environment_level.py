@@ -5,7 +5,6 @@ import pygame
 import textwrap
 from ortools.math_opt.python import mathopt
 
-
 def draw_dashed_line(surface, color, start_pos, end_pos, width=1, dash_length=10, space_length=5):
     x1, y1 = start_pos
     x2, y2 = end_pos
@@ -22,7 +21,6 @@ def draw_dashed_line(surface, color, start_pos, end_pos, width=1, dash_length=10
         end_x = x1 + dx * end_fraction
         end_y = y1 + dy * end_fraction
         pygame.draw.line(surface, color, (start_x, start_y), (end_x, end_y), width)
-
 
 N_timesteps = 24
 hours = np.arange(N_timesteps)
@@ -51,11 +49,6 @@ optimal_value = 0
 if result.termination.reason == mathopt.TerminationReason.OPTIMAL:
     optimal_value = result.objective_value()
 
-
-# --------------------------
-# Pygame-based GUI with dynamic layout (resizable window), integrated overlay,
-# and a dark mode toggle.
-# --------------------------
 class HydropowerGame:
     def __init__(self):
         pygame.init()
@@ -135,7 +128,6 @@ class HydropowerGame:
                                        int(self.window_width * 0.92),
                                        int(self.window_height * 0.05))
 
-        # Update buttons (now 5 buttons: "Restart", "Check solution", "Optimize", "Instructions", "Dark Mode")
         button_width = int(150 * self.window_width / 1200)
         button_height = int(40 * self.window_height / 900)
         gap = int(50 * self.window_width / 1200)
@@ -148,7 +140,6 @@ class HydropowerGame:
             self.buttons[label] = pygame.Rect(start_x + i * (button_width + gap),
                                               button_y, button_width, button_height)
 
-        # Update panels for metrics.
         panel_margin = int(10 * self.window_width / 1200)
         panel_width = (self.total_panel_area.width - 4 * panel_margin) // 5
         panel_height = self.total_panel_area.height
@@ -182,13 +173,11 @@ class HydropowerGame:
         revenue_pct = 0
         if optimal_value:
             revenue_pct = 100 * self.total_revenue / optimal_value
-        # Use a fixed color for optimality text (here we use the standard text color).
         pct_text = self.font.render(f"Optimality: {revenue_pct:.0f}%", True, self.get_text_color())
 
         pct_rect = pct_text.get_rect(topright=(self.window_width - 20, timer_rect.bottom + 5))
         self.screen.blit(pct_text, pct_rect)
         
-        # Use the feasibility flag that reflects whether all bars are green.
         feas_text = "Feasible!" if self.feasible_solution else "Infeasible"
         feas_color = (0, 200, 0) if self.feasible_solution else (200, 0, 0)
         feas_line = self.font.render(feas_text, True, feas_color)
@@ -196,11 +185,9 @@ class HydropowerGame:
         self.screen.blit(feas_line, feas_rect)
 
     def draw_bar_graph(self):
-        # Draw background for graph area
         pygame.draw.rect(self.screen, self.get_panel_color(), self.bar_graph_area, 2)
         max_value = 2.5
     
-        # Draw the vertical (y) axis at the left edge of the graph area.
         pygame.draw.line(self.screen, self.get_text_color(),
                          (self.bar_graph_area.x, self.bar_graph_area.y),
                          (self.bar_graph_area.x, self.bar_graph_area.y + self.bar_graph_area.height), 2)
@@ -208,7 +195,6 @@ class HydropowerGame:
         tick_interval = 0.5
         num_ticks = int(max_value / tick_interval) + 1
     
-        # Draw horizontal tick marks and labels.
         for i in range(num_ticks):
             tick_value = i * tick_interval
             y = self.bar_graph_area.y + self.bar_graph_area.height - (tick_value / max_value) * self.bar_graph_area.height
@@ -218,17 +204,14 @@ class HydropowerGame:
             tick_label = self.font.render(f"{tick_value:.1f}", True, self.get_text_color())
             self.screen.blit(tick_label, (self.bar_graph_area.x - 35, y - 10))
     
-        # Draw the horizontal (x) axis.
         pygame.draw.line(self.screen, self.get_text_color(),
                          (self.bar_graph_area.x, self.bar_graph_area.y + self.bar_graph_area.height),
                          (self.bar_graph_area.x + self.bar_graph_area.width, self.bar_graph_area.y + self.bar_graph_area.height), 2)
     
-        # Define a left margin so bars do not overlap the y–axis.
         left_margin = 5
         available_width = self.bar_graph_area.width - left_margin
         bar_width = available_width / N_timesteps
     
-        # Draw x-axis tick marks and labels.
         x_ticks = [0, 5, 10, 15, 20]
         for tick in x_ticks:
             tick_x = self.bar_graph_area.x + left_margin + (tick + 0.5) * bar_width
@@ -249,7 +232,6 @@ class HydropowerGame:
                                                              self.bar_graph_area.centery))
         self.screen.blit(y_axis_title_rotated, y_title_rect)
     
-        # Draw the bars using the left_margin offset.
         for i in range(N_timesteps):
             x = int(self.bar_graph_area.x + left_margin + i * bar_width)
             value = self.y_values[i]
@@ -261,7 +243,6 @@ class HydropowerGame:
             text_rect = text.get_rect(center=(x + bar_width / 2, y - 10))
             self.screen.blit(text, text_rect)
     
-        # Draw the price line using the same offset.
         price_points = []
         for i in range(N_timesteps):
             x = self.bar_graph_area.x + left_margin + (i + 0.5) * bar_width
@@ -270,7 +251,6 @@ class HydropowerGame:
         if len(price_points) >= 2:
             pygame.draw.lines(self.screen, self.get_text_color(), False, price_points, 2)
     
-        # (Rest of your legend drawing code remains unchanged.)
         legend_rect = pygame.Rect(self.bar_graph_area.right - 160, self.bar_graph_area.y + 10, 150, 50)
         pygame.draw.rect(self.screen, self.get_panel_color(), legend_rect)
         pygame.draw.rect(self.screen, self.get_text_color(), legend_rect, 2)
