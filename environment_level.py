@@ -51,6 +51,11 @@ optimal_value = 0
 if result.termination.reason == mathopt.TerminationReason.OPTIMAL:
     optimal_value = result.objective_value()
 
+
+# --------------------------
+# Pygame-based GUI with dynamic layout (resizable window), integrated overlay,
+# and a dark mode toggle.
+# --------------------------
 class HydropowerGame:
     def __init__(self):
         pygame.init()
@@ -130,11 +135,11 @@ class HydropowerGame:
                                        int(self.window_width * 0.92),
                                        int(self.window_height * 0.05))
 
-        # Update buttons (now 5 buttons: "Restart", "Check Solution", "Optimize", "Instructions", "Dark Mode")
+        # Update buttons (now 5 buttons: "Restart", "Check solution", "Optimize", "Instructions", "Dark Mode")
         button_width = int(150 * self.window_width / 1200)
         button_height = int(40 * self.window_height / 900)
         gap = int(50 * self.window_width / 1200)
-        button_labels = ["Restart", "Check solution", "Optimize", "Instructions", "Dark Mode"]
+        button_labels = ["Restart", "Check Solution", "Optimize", "Instructions", "Dark Mode"]
         total_buttons_width = len(button_labels) * button_width + (len(button_labels) - 1) * gap
         start_x = self.button_area.x + (self.button_area.width - total_buttons_width) // 2
         button_y = self.button_area.y + (self.button_area.height - button_height) // 2
@@ -156,27 +161,18 @@ class HydropowerGame:
             self.total_bar_graphs[label] = pygame.Rect(x, y, panel_width, panel_height)
 
     def update_metrics(self):
-        self.total_sum = np.sum(self.y_values)
-        self.total_revenue = np.sum(self.y_values * price_values)
-        self.minimum_release_rate = np.min(self.y_values)
-        
-        # Compute ramp differences only for consecutive hours, not wrapping around.
-        if len(self.y_values) > 1:
-            ramp_rate = self.y_values[1:] - self.y_values[:-1]
+            self.total_sum = np.sum(self.y_values)
+            self.total_revenue = np.sum(self.y_values * price_values)
+            self.minimum_release_rate = np.min(self.y_values)
+            ramp_rate = np.roll(self.y_values, -1) - self.y_values
             self.maximum_ramp_up_rate = np.max(ramp_rate)
             self.maximum_ramp_down_rate = np.max(-ramp_rate)
-        else:
-            self.maximum_ramp_up_rate = 0
-            self.maximum_ramp_down_rate = 0
-    
-        self.feasible_total_sum = abs(self.total_sum - TARGET) <= target_tol
-        self.feasible_min_release = self.minimum_release_rate >= (min_release - 0.1 * target_tol)
-        self.feasible_ramp_up = self.maximum_ramp_up_rate <= (max_ramp_up + 0.1 * target_tol)
-        self.feasible_ramp_down = self.maximum_ramp_down_rate <= (max_ramp_down + 0.1 * target_tol)
-        self.feasible_solution = (self.feasible_total_sum and self.feasible_min_release and
-                                  self.feasible_ramp_up and self.feasible_ramp_down)
-
-
+            self.feasible_total_sum = abs(self.total_sum - TARGET) <= target_tol
+            self.feasible_min_release = self.minimum_release_rate >= (min_release - 0.1 * target_tol)
+            self.feasible_ramp_up = self.maximum_ramp_up_rate <= (max_ramp_up + 0.1 * target_tol)
+            self.feasible_ramp_down = self.maximum_ramp_down_rate <= (max_ramp_down + 0.1 * target_tol)
+            self.feasible_solution = (self.feasible_total_sum and self.feasible_min_release and
+                                      self.feasible_ramp_up and self.feasible_ramp_down)
 
     def draw_timer(self):
         elapsed = time.time() - self.start_time
