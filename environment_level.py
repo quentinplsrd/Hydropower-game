@@ -5,6 +5,7 @@ import pygame
 import textwrap
 from ortools.math_opt.python import mathopt
 
+
 def draw_dashed_line(surface, color, start_pos, end_pos, width=1, dash_length=10, space_length=5):
     x1, y1 = start_pos
     x2, y2 = end_pos
@@ -21,6 +22,7 @@ def draw_dashed_line(surface, color, start_pos, end_pos, width=1, dash_length=10
         end_x = x1 + dx * end_fraction
         end_y = y1 + dy * end_fraction
         pygame.draw.line(surface, color, (start_x, start_y), (end_x, end_y), width)
+
 
 N_timesteps = 24
 hours = np.arange(N_timesteps)
@@ -49,6 +51,11 @@ optimal_value = 0
 if result.termination.reason == mathopt.TerminationReason.OPTIMAL:
     optimal_value = result.objective_value()
 
+
+# --------------------------
+# Pygame-based GUI with dynamic layout (resizable window), integrated overlay,
+# and a dark mode toggle.
+# --------------------------
 class HydropowerGame:
     def __init__(self):
         pygame.init()
@@ -59,6 +66,7 @@ class HydropowerGame:
         self.clock = pygame.time.Clock()
         self.running = True
 
+        # Initialize fonts (will be recalculated in update_layout)
         self.font = pygame.font.SysFont(None, 24)
         self.large_font = pygame.font.SysFont(None, 32)
 
@@ -67,8 +75,10 @@ class HydropowerGame:
         self.message = ""
         self.dark_mode = False
 
+        # Initialize layout areas and UI objects.
         self.update_layout()
 
+        # Initial hourly releases.
         self.y_values = (TARGET / N_timesteps) * np.ones(N_timesteps)
         self.selected_bar = None
         self.dragging = False
@@ -78,6 +88,7 @@ class HydropowerGame:
         self.solution_checked = False
         self.try_again_button_rect = None
 
+    # Helper methods for theme colors.
     def get_bg_color(self):
         return (30, 30, 30) if self.dark_mode else (255, 255, 255)
 
@@ -305,7 +316,7 @@ class HydropowerGame:
                 if abs(value - target_value) <= target_tol:
                     color = (0, 200, 0)
             elif key == "Total release (AF)":
-                color = (0, 200, 0) if value <= target_value else (200, 0, 0)
+                color = (0, 200, 0) if abs(value - target_value) <= target_tol else (200, 0, 0)
             elif key == "Minimum release (AF/hr)":
                 color = (200, 0, 0)
                 if value >= (target_value - 0.1 * target_tol):
@@ -323,12 +334,10 @@ class HydropowerGame:
                              (rect.x + rect.width, axis_y),
                              width=2, dash_length=10, space_length=5)
     
-            # Draw the metric name above the panel.
             label = self.font.render(f"{key}", True, self.get_text_color())
             label_rect = label.get_rect(center=(rect.centerx, rect.y - 10))
             self.screen.blit(label, label_rect)
             
-            # Position the target (limit) text relative to the dashed line.
             target_label = self.font.render(target_name, True, self.get_text_color())
             target_label_rect = target_label.get_rect(center=(rect.centerx, axis_y - 10))
             self.screen.blit(target_label, target_label_rect)
@@ -338,7 +347,6 @@ class HydropowerGame:
         for label, rect in self.buttons.items():
             pygame.draw.rect(self.screen, self.get_button_color(), rect)
             pygame.draw.rect(self.screen, self.get_button_outline_color(), rect, 2)
-            # For the dark mode button, update label text to reflect the current state.
             display_label = label
             if label == "Dark Mode":
                 display_label = f"Dark Mode: {'On' if self.dark_mode else 'Off'}"
@@ -406,18 +414,16 @@ class HydropowerGame:
 
     def check_action(self):
         self.update_metrics()
-        percent_solution = 100 * self.total_revenue / optimal_value if optimal_value != 0 else 0
         time_to_find = time.time() - self.start_time
-        if percent_solution >= 85:
+        if self.feasible_solution:
             self.message = (f"Solution is feasible!\n"
-                            f"You are {percent_solution:.0f}% close to the optimal solution.\n"
                             f"Time to find: {time_to_find:.0f}s")
         else:
-            self.message = (f"Solution is not feasible, try again...\n"
-                            f"You are only {percent_solution:.0f}% close to the optimal solution.\n"
+            self.message = (f"Solution is not feasible, try again!\n"
                             f"Time to find: {time_to_find:.0f}s")
         self.solution_checked = True
         self.start_time = time.time()
+
 
     def optimize_action(self):
         if not self.solution_checked:
