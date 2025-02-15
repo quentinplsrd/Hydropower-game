@@ -51,11 +51,6 @@ optimal_value = 0
 if result.termination.reason == mathopt.TerminationReason.OPTIMAL:
     optimal_value = result.objective_value()
 
-
-# --------------------------
-# Pygame-based GUI with dynamic layout (resizable window), integrated overlay,
-# and a dark mode toggle.
-# --------------------------
 class HydropowerGame:
     def __init__(self):
         pygame.init()
