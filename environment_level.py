@@ -135,7 +135,7 @@ class HydropowerGame:
                                        int(self.window_width * 0.92),
                                        int(self.window_height * 0.05))
 
-        # Update buttons (now 5 buttons: "Restart", "Check solution", "Optimize", "Instructions", "Dark Mode")
+        # Update buttons (now 5 buttons: "Restart", "Check Solution", "Optimize", "Instructions", "Dark Mode")
         button_width = int(150 * self.window_width / 1200)
         button_height = int(40 * self.window_height / 900)
         gap = int(50 * self.window_width / 1200)
@@ -391,7 +391,7 @@ class HydropowerGame:
             if rect.collidepoint(pos):
                 if label == "Restart":
                     self.start_action()
-                elif label == "Check solution":
+                elif label == "Check Solution":
                     self.check_action()
                 elif label == "Optimize":
                     self.optimize_action()
