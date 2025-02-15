@@ -1,3 +1,6 @@
+import sys
+import time
+import numpy as np
 import pygame
 import textwrap
 from ortools.math_opt.python import mathopt
