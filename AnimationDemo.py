@@ -21,6 +21,7 @@ GATE_MOVE_DISTANCE = 0.08333  # Distance the gate moves per frame
 FADE_IN_DURATION = 2.0  # Duration of fade-in effect in seconds
 WATER_LEVEL_THRESHOLD = 0.01 * MAX_WATER_LEVEL  # 1% of the max water level
 WINDOW_MODE = 1
+LEVEL_DURATION = 30  # Duration of the level in seconds
 
 # URL to open
 WEBPAGE_URL = "https://www1.eere.energy.gov/apps/water/redi_island/#/large-island/"
@@ -60,8 +61,7 @@ def update_graph(x_start, x_end, power_data):
 
     plt.figure(figsize=(4, 3), facecolor='black')  # Set figure background color to black
     ax = plt.gca()  # Get current axes
-    ax.set_facecolor('black')  # Set axes background color to black
-
+    ax.set_facecolor('black')  
     plt.plot(power_x, power_data, label='Power Generated', color='red')
     plt.plot(x, y_sine, label='Load Curve', color='white')  # Change line color for visibility
     plt.xlim(x_start, x_end)
@@ -72,17 +72,16 @@ def update_graph(x_start, x_end, power_data):
     for text in legend.get_texts():
         text.set_color('white')  # Set legend text color to white
 
-    plt.axis('off')  # Turn off the axis
-
+    plt.axis('off')  
     plt.tight_layout()  # Automatically adjust subplot parameters
 
     # Use a temporary file for the graph image
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-    plt.savefig(temp_file.name, dpi=200, facecolor='black')  # Ensure the saved figure has a black background
+    plt.savefig(temp_file.name, dpi=200, facecolor='black')  
     plt.close()
     return temp_file.name
 
-def load_graph_image(filename):
+def load_image(filename):
     try:
         return pygame.image.load(filename).convert()
     except pygame.error as e:
@@ -106,13 +105,9 @@ def reset_game():
         'x_start': 0,
         'x_end': 5,
         'game_over': False,
-        'fade_in_alpha': 0,
-        'fade_in_time': 0.0,
-        'fade_in_alpha_boss': 0,
-        'fade_in_time_boss': 0.0,
-        'fade_in_alpha_bubble': 0,
-        'fade_in_time_bubble': 0.0,
-        'score': 0.0
+        'score': 0.0,
+        'elapsed_time': 0.0,
+        'level_complete': False
     }
 
 def truncate_float(value, decimal_places):
@@ -121,11 +116,9 @@ def truncate_float(value, decimal_places):
     return int(value * factor) / factor
 
 def change_screen_size(width, height):
-    """Change the screen size."""
     global screen
     screen = pygame.display.set_mode((width, height))
 
-# Load the dial and pointer images
 try:
     dial_image_path = resource_path('assets/dial.png')
     dial_image = pygame.image.load(dial_image_path).convert_alpha()
@@ -169,30 +162,6 @@ def main():
     SCREEN_WIDTH = screen.get_width()
     global WINDOW_MODE
 
-    # Load the flooded town image
-    try:
-        flooded_town_image_path = resource_path('assets/FloodedTown.jpg')
-        flooded_town_image = pygame.image.load(flooded_town_image_path).convert()
-    except pygame.error as e:
-        print(f"Error loading flooded town image: {e}")
-        sys.exit(1)
-
-    # Load the angry boss image and set the color key
-    try:
-        angry_boss_image_path = resource_path('assets/Angry_Boss.png')
-        angry_boss_image = pygame.image.load(angry_boss_image_path).convert_alpha()
-    except pygame.error as e:
-        print(f"Error loading angry boss image: {e}")
-        sys.exit(1)
-
-    # Load the speech bubble image
-    try:
-        bubble_image_path = resource_path('assets/bubble.png')
-        bubble_image = pygame.image.load(bubble_image_path).convert_alpha()
-    except pygame.error as e:
-        print(f"Error loading bubble image: {e}")
-        sys.exit(1)
-
     # Load the monitor image
     try:
         monitor_image_path = resource_path('assets/monitor.jpg')
@@ -213,9 +182,6 @@ def main():
 
     # Define button properties
     button_text = "Click to view REDi Island"
-
-    # Retry button properties
-    retry_text = "Retry"
 
     running = True
 
@@ -254,46 +220,74 @@ def main():
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if button_rect.collidepoint(event.pos):
                     webbrowser.open(WEBPAGE_URL)
-                elif game_state['game_over'] and game_state['fade_in_alpha_bubble'] == 255:
-                    if retry_rect.collidepoint(event.pos):
-                        game_state = reset_game()  # Reset the game state
-        screen.fill((0, 0, 0))
 
-        if game_state['game_over']:
-            # Play fade-in to game over screen
-            game_state['fade_in_time'] += delta_time
-            game_state['fade_in_alpha'] = min(255, int((game_state['fade_in_time'] / FADE_IN_DURATION) * 255))
-            flooded_town_image = pygame.transform.scale(flooded_town_image, (SCREEN_WIDTH, SCREEN_HEIGHT))
-            flooded_town_image.set_alpha(game_state['fade_in_alpha'])
-            screen.blit(flooded_town_image, (0, 0))
-            # Display the angry boss image once the fade-in is complete
-            if game_state['fade_in_alpha'] == 255:
-                scaled_boss_image = pygame.transform.scale(angry_boss_image, (SCREEN_WIDTH * 0.45, SCREEN_HEIGHT * 0.75))
-                game_state['fade_in_time_boss'] += delta_time
-                game_state['fade_in_alpha_boss'] = min(255, int((2 * game_state['fade_in_time_boss'] / FADE_IN_DURATION) * 255))
-                scaled_boss_image.set_alpha(game_state['fade_in_alpha_boss'])
-                screen.blit(scaled_boss_image, ((SCREEN_WIDTH // 2 - scaled_boss_image.get_width() // 2) - SCREEN_WIDTH * 0.275, (SCREEN_HEIGHT // 2 - scaled_boss_image.get_height() // 2) + SCREEN_HEIGHT * 0.167))
-                if game_state['fade_in_alpha_boss'] == 255:
-                    game_state['fade_in_time_bubble'] += delta_time
-                    game_state['fade_in_alpha_bubble'] = min(255, int((2 * game_state['fade_in_time_bubble'] / FADE_IN_DURATION) * 255))
-                    bubble_image.set_alpha(game_state['fade_in_alpha_bubble'])
-                    bubble_image = pygame.transform.scale(bubble_image, (SCREEN_WIDTH * 0.5, SCREEN_HEIGHT * 0.2))
-                    # Display the speech bubble and text
-                    bubble_position = ((SCREEN_WIDTH * 0.75 - bubble_image.get_width() // 2) - SCREEN_WIDTH * 0.1875, (SCREEN_HEIGHT // 4 - bubble_image.get_height() // 2) + SCREEN_HEIGHT * 0.167)
-                    screen.blit(bubble_image, bubble_position)
-                    # bubble_text = BUBBLEFONT.render("You flooded the town, you're fired!", True, (0, 0, 0))
-                    if game_state['fade_in_alpha_bubble'] == 255:
-                        # Draw the retry button
-                        retry_rect = pygame.Rect(SCREEN_WIDTH * 0.5, SCREEN_HEIGHT * 0.55, SCREEN_WIDTH * 0.06, SCREEN_HEIGHT * 0.05)
-                        if WINDOW_MODE == 1:
-                            retry_font = pygame.font.SysFont(None, 24)
-                        elif WINDOW_MODE == 2:
-                            retry_font = pygame.font.SysFont(None, 32)
-                        elif WINDOW_MODE == 3:
-                            retry_font = pygame.font.SysFont(None, 40)
-                        retry_label = retry_font.render(retry_text, True, (255, 255, 255))
-                        pygame.draw.rect(screen, (0, 0, 0), retry_rect)
-                        screen.blit(retry_label, retry_rect)
+        # Update elapsed time
+        game_state['elapsed_time'] += delta_time
+
+        # Check for level completion
+        if game_state['elapsed_time'] >= LEVEL_DURATION and not game_state['game_over']:
+            game_state['level_complete'] = True
+
+        screen.fill((0, 0, 0))
+ 
+        if game_state['level_complete']:
+            # Draw the game environment as usual
+            # Calculate the number of open gates
+            open_gates = sum(gate['target_y'] == gate['open_y'] for gate in game_state['gates'])
+            outer_flow = (open_gates / 3) * game_state['base_outer_flow']
+            game_state['active_outer_flow'] = outer_flow
+
+            # Normalize the water level to a range of 0 to NUM_FRAMES - 1
+            frame_index = int((game_state['water_level'] / MAX_WATER_LEVEL) * (NUM_FRAMES - 1))
+            frame_index = max(0, min(NUM_FRAMES - 1, frame_index))  # Clamp to valid range
+            frames[frame_index] = pygame.transform.scale(frames[frame_index], (SCREEN_WIDTH, SCREEN_HEIGHT))
+            screen.blit(frames[frame_index], (0, 0))
+
+            if game_state['active_outer_flow'] > 0:
+                flow_image = pygame.transform.scale(flow_image, (SCREEN_WIDTH*0.2, SCREEN_HEIGHT*0.05))
+                screen.blit(flow_image, (SCREEN_WIDTH*0.785, SCREEN_HEIGHT*0.765))
+
+            # Draw the gates
+            for gate in game_state['gates']:
+                gate_rect = pygame.Rect(gate['x'] * SCREEN_WIDTH, gate['y'] * SCREEN_HEIGHT, GATE_WIDTH * SCREEN_WIDTH, GATE_HEIGHT * SCREEN_HEIGHT)
+                pygame.draw.rect(screen, (169, 169, 169), gate_rect)
+
+            # Display the monitor image behind the graph
+            monitor_image_scaled = pygame.transform.scale(monitor_image, (int(SCREEN_WIDTH * 0.35), int(SCREEN_HEIGHT * 0.35)))
+            screen.blit(monitor_image_scaled, (SCREEN_WIDTH * 0.62, SCREEN_HEIGHT * 0.18))
+
+            # Display the power generated vs load graph
+            graph_filename = update_graph(game_state['x_start'], game_state['x_end'], game_state['power_data'])
+            graph_image = load_image(graph_filename)
+            if graph_image:
+                scaled_graph_image = pygame.transform.scale(graph_image, (SCREEN_WIDTH * 0.28, SCREEN_HEIGHT * 0.25))
+                screen.blit(scaled_graph_image, (SCREEN_WIDTH * 0.65, SCREEN_HEIGHT * 0.22))
+            os.remove(graph_filename)
+
+            # Draw the dial and pointer
+            draw_dial_and_pointer(screen, power_generated, SCREEN_WIDTH, SCREEN_HEIGHT)
+
+            # Draw the overlay
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+            overlay.set_alpha(200)  # Semi-transparent
+            overlay.fill((0, 0, 0))
+            screen.blit(overlay, (0, 0))
+
+            # Display level complete message
+            if WINDOW_MODE == 1:
+                complete_font = pygame.font.SysFont(None, 48)
+            elif WINDOW_MODE == 2:
+                complete_font = pygame.font.SysFont(None, 72)
+            elif WINDOW_MODE == 3:
+                complete_font = pygame.font.SysFont(None, 96)
+
+            complete_text = "Level complete! Your score was:"
+            complete_label = complete_font.render(complete_text, True, (255, 255, 255))
+            score_text = f"{int(game_state['score'])}"
+            score_label = complete_font.render(score_text, True, (255, 255, 255))
+
+            screen.blit(complete_label, ((SCREEN_WIDTH - complete_label.get_width()) // 2, SCREEN_HEIGHT // 3))
+            screen.blit(score_label, ((SCREEN_WIDTH - score_label.get_width()) // 2, SCREEN_HEIGHT // 2))
         else:
             # Calculate the number of open gates
             open_gates = sum(gate['target_y'] == gate['open_y'] for gate in game_state['gates'])
@@ -327,13 +321,7 @@ def main():
             graph_filename = update_graph(game_state['x_start'], game_state['x_end'], game_state['power_data'])
 
             # Load and display the graph
-            graph_image = load_graph_image(graph_filename)
-
-            # Check for game over condition
-            if game_state['water_level'] >= MAX_WATER_LEVEL:
-                game_state['game_over'] = True
-                game_state['fade_in_alpha'] = 0  # Reset alpha for fade-in
-                game_state['fade_in_time'] = 0.0  # Reset fade-in timer
+            graph_image = load_image(graph_filename)
 
             # Update gate positions
             for gate in game_state['gates']:
