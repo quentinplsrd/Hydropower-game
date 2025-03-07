@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="210mm"
+   height="297mm"
+   viewBox="0 0 210 297"
+   version="1.1"
+   id="svg5"
+   inkscape:version="1.2.2 (732a01da63, 2022-12-09)"
+   sodipodi:docname="UI Mock Up.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview7"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     showgrid="false"
+     inkscape:zoom="1.4236377"
+     inkscape:cx="391.25123"
+     inkscape:cy="283.78007"
+     inkscape:window-width="1366"
+     inkscape:window-height="745"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1" />
+  <defs
+     id="defs2" />
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <rect
+       style="fill:#000000;stroke-width:0.264583"
+       id="rect111"
+       width="170.8407"
+       height="51.515045"
+       x="20.224844"
+       y="24.616005" />
+    <rect
+       style="fill:#000000;stroke-width:0.264583"
+       id="rect115"
+       width="69.136269"
+       height="40.515339"
+       x="121.91772"
+       y="82.889183" />
+    <rect
+       style="fill:#000000;stroke-width:0.264583"
+       id="rect125"
+       width="45.719143"
+       height="39.028542"
+       x="72.109871"
+       y="84.004288" />
+    <rect
+       style="fill:#000000;stroke-width:0.264583"
+       id="rect127"
+       width="46.462547"
+       height="40.515339"
+       x="19.700119"
+       y="83.632591" />
+    <text
+       xml:space="preserve"
+       style="font-size:3.175px;fill:#000000;stroke-width:0.264583"
+       x="90.137344"
+       y="49.807846"
+       id="text183"><tspan
+         sodipodi:role="line"
+         id="tspan181"
+         style="fill:#ffffff;stroke-width:0.264583"
+         x="90.137344"
+         y="49.807846">Main Plant Display</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:3.175px;fill:#ffffff;stroke-width:0.264583"
+       x="149.05185"
+       y="103.14686"
+       id="text397"><tspan
+         sodipodi:role="line"
+         id="tspan395"
+         style="stroke-width:0.264583"
+         x="149.05185"
+         y="103.14686">Plot Display</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:3.15288px;fill:#ffffff;stroke-width:0.26274"
+       x="82.292824"
+       y="87.428322"
+       id="text401"
+       transform="scale(0.89010957,1.1234572)"><tspan
+         sodipodi:role="line"
+         id="tspan399"
+         style="stroke-width:0.26274"
+         x="82.292824"
+         y="87.428322">Immersive display; gate status </tspan><tspan
+         sodipodi:role="line"
+         style="stroke-width:0.26274"
+         x="82.292824"
+         y="91.369423"
+         id="tspan403">buttons? and dial</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:3.175px;fill:#ffffff;stroke-width:0.264583"
+       x="27.877529"
+       y="95.712845"
+       id="text407"><tspan
+         sodipodi:role="line"
+         id="tspan405"
+         style="stroke-width:0.264583"
+         x="27.877529"
+         y="95.712845">Text Info:</tspan><tspan
+         sodipodi:role="line"
+         style="stroke-width:0.264583"
+         x="27.877529"
+         y="99.681595"
+         id="tspan409">Power wasted, gen, </tspan><tspan
+         sodipodi:role="line"
+         style="stroke-width:0.264583"
+         x="27.877529"
+         y="103.65034"
+         id="tspan411">flow rate, etc.</tspan></text>
+  </g>
+</svg>

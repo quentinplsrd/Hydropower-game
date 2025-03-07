@@ -61,11 +61,12 @@ def update_graph(x_start, x_end, power_data):
 
     plt.figure(figsize=(4, 3), facecolor='black')  # Set figure background color to black
     ax = plt.gca()  # Get current axes
-    ax.set_facecolor('black')  
+    ax.set_facecolor('black') 
     plt.plot(power_x, power_data, label='Power Generated', color='red')
     plt.plot(x, y_sine, label='Load Curve', color='white')  # Change line color for visibility
     plt.xlim(x_start, x_end)
     plt.ylim(-0.5, 12)
+    #plt.fill_between(power_x,power_data,y_sine[0:len(power_data)])
 
     # Set legend with white text
     legend = plt.legend(loc='upper right', facecolor='black', edgecolor='white', fontsize=14)
@@ -431,14 +432,17 @@ def main():
 
             # Display the water wasted
 
-            waste_status = f"Average Water Wasted: {(game_state['wasted_water']/game_state['elapsed_time']):.2f} cf/s"
+            waste_status = f"Average Water Wasted: {(game_state['wasted_water']/game_state['elapsed_time']):.2f} cfs"
             waste_label = performance_font.render(waste_status, True, (0, 0, 0))
             screen.blit(waste_label, (SCREEN_WIDTH - waste_label.get_width() - SCREEN_WIDTH*0.0125, SCREEN_HEIGHT*0.1267))
 
             # Display elapsed time
-            time_status = f"Time Elapsed: {game_state['elapsed_time']:.2f} seconds"
+            time_status = f"Time Elapsed: {int(game_state['elapsed_time'])} sec"
+            time_max = f"Total Duration: {LEVEL_DURATION} sec"
             time_label = performance_font.render(time_status, True, (0, 0, 0))
+            max_label = performance_font.render(time_max, True, (0, 0, 0))
             screen.blit(time_label, (SCREEN_WIDTH*0.0125, SCREEN_HEIGHT*0.0167))
+            screen.blit(max_label, (SCREEN_WIDTH*0.0125, SCREEN_HEIGHT*0.0567))
 
             # Calculate the sine curve value at x_start + 0.5
             sine_value = 2*np.sin(game_state['x_start'] + 0.5) + 6
