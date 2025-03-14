@@ -31,6 +31,13 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
+def load_image(filename):
+    try:
+        return pygame.image.load(filename).convert()
+    except pygame.error as e:
+        print(f"Unable to load image: {e}")
+        return None
+
 def load_frames(num_frames, path_template):
     """Load and scale frames for animation."""
     frames = []
@@ -44,6 +51,11 @@ def load_frames(num_frames, path_template):
             sys.exit(1)
     return frames
 
+def truncate_float(value, decimal_places):
+    """Truncate a float to a specified number of decimal places."""
+    factor = 10.0 ** decimal_places
+    return int(value * factor) / factor
+
 def change_screen_size(width, height):
     global screen
     screen = pygame.display.set_mode((width, height))
@@ -51,12 +63,16 @@ def change_screen_size(width, height):
 def reset_game():
     return {
         'rotation' : 0,
-        'release' : 0.0
+        'release' : 0.0,
+        'power_data' : [],
+        'x_start': 0,
+        'x_end': 5,
+        'level_complete': False
     }
 
 def get_pointer_rotation(power_generated):
     """Calculate the rotation angle for the pointer based on power generated."""
-    clamped_power = min(max(power_generated, 0), 25)  # Clamp power to a maximum of 10
+    clamped_power = min(max(power_generated, 0), 25)
     return (clamped_power / 25) * 120  # Calculate rotation angle (0 to 120 degrees)
 
 def draw_dial_and_pointer(screen, power_generated, WIDTH, HEIGHT):
@@ -89,6 +105,36 @@ try:
 except pygame.error as e:
     print(f"Error loading pointer image: {e}")
     sys.exit(1)
+
+def update_graph(x_start, x_end, power_data):
+    x = np.linspace(x_start, x_end, 1000)
+    y_sine = 11*np.sin(x) + 14
+
+    # Calculate x-values for power data
+    power_x = np.linspace(x_start, x_start + 0.5, len(power_data))
+
+    plt.figure(figsize=(4, 3), facecolor='black')  # Set figure background color to black
+    ax = plt.gca()  # Get current axes
+    ax.set_facecolor('black') 
+    plt.plot(power_x, power_data, label='Power Generated', color='red')
+    plt.plot(x, y_sine, label='Load Curve', color='white')  # Change line color for visibility
+    plt.xlim(x_start, x_end)
+    plt.ylim(-0.5, 30)
+    #plt.fill_between(power_x,power_data,y_sine[0:len(power_data)])
+
+    # Set legend with white text
+    legend = plt.legend(loc='upper right', facecolor='black', edgecolor='white', fontsize=14)
+    for text in legend.get_texts():
+        text.set_color('white')  # Set legend text color to white
+
+    plt.axis('off')  
+    plt.tight_layout()  # Automatically adjust subplot parameters
+
+    # Use a temporary file for the graph image
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+    plt.savefig(temp_file.name, dpi=200, facecolor='black')  
+    plt.close()
+    return temp_file.name
 
 def main():
     frames = load_frames(NUM_FRAMES, FRAME_PATH_TEMPLATE)
@@ -143,6 +189,23 @@ def main():
         power_status = f"Power Generated: {power_generated} MW"
         power_label = performance_font.render(power_status, True, (255,255,255))
         screen.blit(power_label,(SCREEN_WIDTH*0.045,SCREEN_HEIGHT*0.77))
+        game_state['power_data'].append(power_generated)
+
+        graph_filename = update_graph(game_state['x_start'], game_state['x_end'], game_state['power_data'])
+        graph_image = load_image(graph_filename)
+        if graph_image:
+            scaled_graph_image = pygame.transform.scale(graph_image, (SCREEN_WIDTH * 0.28, SCREEN_HEIGHT * 0.25))
+            screen.blit(scaled_graph_image, (SCREEN_WIDTH * 0.025, SCREEN_HEIGHT * 0.12))
+        os.remove(graph_filename)
+
+        # Trim power data to match the visible window
+        if len(game_state['power_data']) > 10:
+            game_state['power_data'] = game_state['power_data'][-10:]
+
+        # Update the x range to simulate movement
+        game_state['x_start'] += 0.05
+        game_state['x_end'] += 0.05
+
         draw_dial_and_pointer(screen, power_generated,SCREEN_WIDTH,SCREEN_HEIGHT)
         pygame.display.flip()
 

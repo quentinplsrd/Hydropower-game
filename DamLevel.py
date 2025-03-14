@@ -16,7 +16,7 @@ NUM_FRAMES = 170  # Number of frames to load
 FRAME_PATH_TEMPLATE = 'assets2/scene{}.png'
 MAX_WATER_LEVEL = 4  # Maximum water level for game over
 GATE_WIDTH = 0.01
-GATE_HEIGHT = 0.1666666
+GATE_HEIGHT = 0.1667
 GATE_MOVE_DISTANCE = 0.08333  # Distance the gate moves per frame
 FADE_IN_DURATION = 2.0  # Duration of fade-in effect in seconds
 WATER_LEVEL_THRESHOLD = 0.01 * MAX_WATER_LEVEL  # 1% of the max water level
@@ -456,7 +456,7 @@ def main():
 
             # Calculate the position to center the text at the top of the screen
             performance_x = (SCREEN_WIDTH - performance_label.get_width()) // 2
-            performance_y = 10  # Adjust the y-position as needed
+            performance_y = SCREEN_HEIGHT*0.0167  # Adjust the y-position as needed
 
             # Blit the performance label to the screen
             screen.blit(performance_label, (performance_x, performance_y))
