@@ -5,6 +5,23 @@ import pygame
 import textwrap
 from ortools.math_opt.python import mathopt
 
+def draw_dashed_line(surface, color, start_pos, end_pos, width=1, dash_length=10, space_length=5):
+    x1, y1 = start_pos
+    x2, y2 = end_pos
+    dx = x2 - x1
+    dy = y2 - y1
+    line_length = (dx**2 + dy**2) ** 0.5
+    dash_gap = dash_length + space_length
+    num_dashes = int(line_length / dash_gap)
+    for i in range(num_dashes + 1):
+        start_fraction = i * dash_gap / line_length
+        end_fraction = min((i * dash_gap + dash_length) / line_length, 1)
+        start_x = x1 + dx * start_fraction
+        start_y = y1 + dy * start_fraction
+        end_x = x1 + dx * end_fraction
+        end_y = y1 + dy * end_fraction
+        pygame.draw.line(surface, color, (start_x, start_y), (end_x, end_y), width)
+
 # Global simulation parameters and OR-Tools model setup.
 N_timesteps = 24
 hours = np.arange(N_timesteps)
@@ -69,6 +86,8 @@ def init_game():
     game['message'] = ""
     game['dark_mode'] = False
     game['show_credits'] = False
+    game['level_complete'] = False  # New flag
+    game['best_optimality'] = 0     # Track best optimality score
 
     # Credits info.
     game['credits_list'] = [
@@ -145,7 +164,8 @@ def update_layout(game):
     vertical_offset = 30  # Additional upward offset
     button_width = int(150 * game['window_width'] / 1200)
     gap = int(50 * game['window_width'] / 1200)
-    button_labels = ["Restart", "Check Solution", "Optimize", "Instructions", "Dark Mode"]
+    # Removed "Optimize" from the list.
+    button_labels = ["Restart", "Check Solution", "Instructions", "Dark Mode"]
     total_buttons_width = len(button_labels) * button_width + (len(button_labels) - 1) * gap
     start_x = game['button_area'].x + (game['button_area'].width - total_buttons_width) // 2
 
@@ -205,10 +225,14 @@ def draw_timer(game):
     pct_text = game['font'].render(f"Optimality: {revenue_pct:.0f}%", True, get_text_color(game))
     pct_rect = pct_text.get_rect(topright=(game['window_width'] - 20, timer_rect.bottom + 5))
     game['screen'].blit(pct_text, pct_rect)
+    # Display best optimality score.
+    best_text = game['font'].render(f"Best: {game.get('best_optimality', 0):.0f}%", True, get_text_color(game))
+    best_rect = best_text.get_rect(topright=(game['window_width'] - 20, pct_rect.bottom + 5))
+    game['screen'].blit(best_text, best_rect)
     feas_text = "Feasible!" if game['feasible_solution'] else "Infeasible"
     feas_color = (0, 200, 0) if game['feasible_solution'] else (200, 0, 0)
     feas_line = game['font'].render(feas_text, True, feas_color)
-    feas_rect = feas_line.get_rect(topright=(game['window_width'] - 20, pct_rect.bottom + 5))
+    feas_rect = feas_line.get_rect(topright=(game['window_width'] - 20, best_rect.bottom + 5))
     game['screen'].blit(feas_line, feas_rect)
 
 def draw_bar_graph(game):
@@ -282,23 +306,6 @@ def draw_bar_graph(game):
     rel_text = game['font'].render("Releases (AF)", True, get_text_color(game))
     screen.blit(rel_text, (legend_rect.x + 40, legend_rect.y + 30))
     draw_timer(game)
-
-def draw_dashed_line(surface, color, start_pos, end_pos, width=1, dash_length=10, space_length=5):
-    x1, y1 = start_pos
-    x2, y2 = end_pos
-    dx = x2 - x1
-    dy = y2 - y1
-    line_length = (dx**2 + dy**2) ** 0.5
-    dash_gap = dash_length + space_length
-    num_dashes = int(line_length / dash_gap)
-    for i in range(num_dashes + 1):
-        start_fraction = i * dash_gap / line_length
-        end_fraction = min((i * dash_gap + dash_length) / line_length, 1)
-        start_x = x1 + dx * start_fraction
-        start_y = y1 + dy * start_fraction
-        end_x = x1 + dx * end_fraction
-        end_y = y1 + dy * end_fraction
-        pygame.draw.line(surface, color, (start_x, start_y), (end_x, end_y), width)
 
 def draw_total_bars(game):
     screen = game['screen']
@@ -406,34 +413,31 @@ def draw_message(game):
             text = game['large_font'].render(line, True, (255, 255, 255))
             text_rect = text.get_rect(center=(game['window_width'] // 2, game['window_height'] // 2 - 50 + i * 40))
             game['screen'].blit(text, text_rect)
+        # Draw the "Close" button.
         btn_label = "Close"
         btn_width = int(150 * game['window_width'] / 1200)
         btn_height = int(40 * game['window_height'] / 900)
         btn_x = (game['window_width'] - btn_width) // 2
-        btn_y = game['window_height'] // 2 + 50
+        btn_y = game['window_height'] // 2 + 90
         game['try_again_button_rect'] = pygame.Rect(btn_x, btn_y, btn_width, btn_height)
         pygame.draw.rect(game['screen'], get_button_color(game), game['try_again_button_rect'])
         pygame.draw.rect(game['screen'], get_button_outline_color(game), game['try_again_button_rect'], 2)
         btn_text = game['font'].render(btn_label, True, get_text_color(game))
         btn_text_rect = btn_text.get_rect(center=game['try_again_button_rect'].center)
         game['screen'].blit(btn_text, btn_text_rect)
-
-def draw_credits_overlay(game):
-    credits_font = pygame.font.SysFont(None, 48)
-    line_height = credits_font.get_linesize() * 2
-    overlay = pygame.Surface((game['window_width'], game['window_height']), pygame.SRCALPHA)
-    overlay.fill((0, 0, 0, 128))
-    game['screen'].blit(overlay, (0, 0))
-    y = game['credits_offset']
-    for line in game['credits_list']:
-        text = credits_font.render(line, True, (255, 255, 255))
-        text_rect = text.get_rect(center=(game['window_width'] // 2, y))
-        game['screen'].blit(text, text_rect)
-        y += line_height
-    mid_index = len(game['credits_list']) // 2.25
-    middle_line_center = game['credits_offset'] + mid_index * line_height + line_height / 2
-    if middle_line_center > game['window_height'] / 2:
-        game['credits_offset'] -= 2  # Adjust scroll speed as needed
+        # If level complete flag is set, draw a Level Complete button below.
+        if game.get('level_complete'):
+            lc_label = "Level Complete"
+            lc_btn_width = int(150 * game['window_width'] / 1200)
+            lc_btn_height = int(40 * game['window_height'] / 900)
+            lc_btn_x = (game['window_width'] - lc_btn_width) // 2
+            lc_btn_y = btn_y + lc_btn_height + 10  # positioned below the Close button
+            game['level_complete_button_rect'] = pygame.Rect(lc_btn_x, lc_btn_y, lc_btn_width, lc_btn_height)
+            pygame.draw.rect(game['screen'], get_button_color(game), game['level_complete_button_rect'])
+            pygame.draw.rect(game['screen'], get_button_outline_color(game), game['level_complete_button_rect'], 2)
+            lc_text = game['font'].render(lc_label, True, get_text_color(game))
+            lc_text_rect = lc_text.get_rect(center=game['level_complete_button_rect'].center)
+            game['screen'].blit(lc_text, lc_text_rect)
 
 def handle_button_click(game, pos):
     for label, rect in game['buttons'].items():
@@ -443,14 +447,13 @@ def handle_button_click(game, pos):
                 start_action(game)
             elif label == "Check Solution":
                 check_action(game)
-            elif label == "Optimize":
-                optimize_action(game)
             elif label == "Instructions":
                 game['show_instructions'] = True
                 game['message'] = "\n".join(textwrap.wrap(
                     "Find the best hydropower revenue by changing the hourly releases. "
                     "Ensure all environmental rules are met: daily target, minimum release, "
-                    "maximum ramp up, and maximum ramp down.", width=80))
+                    "maximum ramp up, and maximum ramp down. To complete the level, you must obtain "
+                    "both a feasible solution and 90% optimality.", width=80))
             elif label == "Dark Mode":
                 game['dark_mode'] = not game['dark_mode']
             return
@@ -461,26 +464,23 @@ def start_action(game):
     game['start_time'] = time.time()
     game['message'] = ""
     game['show_instructions'] = False
+    game['level_complete'] = False
 
 def check_action(game):
     update_metrics(game)
     time_to_find = time.time() - game['start_time']
+    revenue_pct = 100 * game['total_revenue'] / optimal_value if optimal_value else 0
     if game['feasible_solution']:
-        game['message'] = f"Solution is feasible!\nTime to find: {time_to_find:.0f}s"
+        game['message'] = f"Solution is feasible!\nTime: {time_to_find:.0f}s\nOptimality: {revenue_pct:.0f}%"
+        if revenue_pct > game.get('best_optimality', 0):
+            game['best_optimality'] = revenue_pct
     else:
-        game['message'] = f"Solution is not feasible, try again!\nTime to find: {time_to_find:.0f}s"
+        game['message'] = f"Solution is not feasible, try again!\nTime: {time_to_find:.0f}s\nOptimality: {revenue_pct:.0f}%"
+    
     game['solution_checked'] = True
-    game['start_time'] = time.time()
+    # Only set level complete if the solution is feasible and optimality is at least 90%.
+    game['level_complete'] = game['feasible_solution'] and (revenue_pct >= 90)
 
-def optimize_action(game):
-    if not game['solution_checked']:
-        game['message'] = ("Try to find the solution by yourself first!\nClick 'Check Solution' then 'Optimize'.")
-        return
-    if result.termination.reason == mathopt.TerminationReason.OPTIMAL:
-        game['y_values'] = np.array([result.variable_values()[release[h]] for h in hours])
-        game['message'] = "Optimized solution applied!"
-    else:
-        game['message'] = "The model was infeasible."
 
 def handle_events(game):
     for event in pygame.event.get():
@@ -500,11 +500,16 @@ def handle_events(game):
                     if game['show_credits']:
                         game['credits_offset'] = game['window_height']
                     continue
+                # If a message overlay is shown, check for its buttons.
                 if game['message']:
                     if game.get('try_again_button_rect') and game['try_again_button_rect'].collidepoint(pos):
                         game['message'] = ""
                         game['show_instructions'] = False
-                    continue
+                        continue
+                    if game.get('level_complete_button_rect') and game['level_complete_button_rect'].collidepoint(pos):
+                        # Level complete button clicked: display a congratulatory message
+                        game['level_complete'] = False
+                        continue
                 if game['button_area'].collidepoint(pos):
                     handle_button_click(game, pos)
                 elif game['bar_graph_area'].collidepoint(pos):
@@ -524,7 +529,8 @@ def handle_events(game):
                 dy = game['last_mouse_y'] - event.pos[1]
                 sensitivity = 0.005
                 delta = dy * sensitivity
-                new_value = np.clip(game['y_values'][game['selected_bar']] + delta, 0, 1.5)
+                # Enforce bar values remain between 0.2 and 1.5
+                new_value = np.clip(game['y_values'][game['selected_bar']] + delta, 0.2, 2.0)
                 game['y_values'][game['selected_bar']] = new_value
                 game['last_mouse_y'] = event.pos[1]
         elif event.type == pygame.KEYDOWN:
@@ -557,3 +563,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+#Familiarize myself with levelbuild
