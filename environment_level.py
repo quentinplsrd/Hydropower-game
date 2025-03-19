@@ -1,4 +1,3 @@
-import sys
 import time
 import numpy as np
 import pygame
@@ -25,7 +24,7 @@ def draw_dashed_line(surface, color, start_pos, end_pos, width=1, dash_length=10
 # Global simulation parameters and OR-Tools model setup.
 N_timesteps = 24
 hours = np.arange(N_timesteps)
-TARGET = 16  # Daily release value
+TARGET = 4.8  # Daily release value
 min_release = 0.2
 max_ramp_up = 0.2
 max_ramp_down = 0.3
@@ -61,7 +60,7 @@ def get_panel_color(game):
     return (80, 80, 80) if game['dark_mode'] else (200, 200, 200)
 
 def get_button_color(game):
-    return (100, 100, 100) if game['dark_mode'] else (180, 180, 180)
+    return (100, 100, 100) if game['dark_mode'] else (180, 180, 200)
 
 def get_button_outline_color(game):
     return (255, 255, 255) if game['dark_mode'] else (0, 0, 0)
@@ -70,8 +69,8 @@ def get_button_outline_color(game):
 def init_game():
     pygame.init()
     game = {}
-    game['window_width'] = 1200
-    game['window_height'] = 900
+    game['window_width'] = 800
+    game['window_height'] = 600
     game['screen'] = pygame.display.set_mode((game['window_width'], game['window_height']), pygame.RESIZABLE)
     pygame.display.set_caption("Hydropower Game")
     game['clock'] = pygame.time.Clock()
@@ -85,24 +84,10 @@ def init_game():
     game['show_instructions'] = False
     game['message'] = ""
     game['dark_mode'] = False
-    game['show_credits'] = False
     game['level_complete'] = False  # New flag
     game['best_optimality'] = 0     # Track best optimality score
 
-    # Credits info.
-    game['credits_list'] = [
-        "Quentin Ploussard",
-        "Elise DeGeorge",
-        "Lukas Livengood",
-        "Amr Elseweifi",
-        "Cathy Milostan",
-        "Jonghwan Kwon 'JK'",
-        "Matt Mahalik",
-        "Tom Veselka",
-        "Bree Mendlin",
-        "A WPTO-funded ANL-NREL outreach project"
-    ]
-    game['credits_offset'] = game['window_height']
+    # Remove credits-related items.
 
     # Button animation settings.
     game['button_anim_duration'] = 0.2  # seconds
@@ -153,28 +138,14 @@ def update_layout(game):
                                            int(game['window_height'] * 0.69),
                                            int(game['window_width'] * 0.83),
                                            int(game['window_height'] * 0.15))
-    game['credit_area'] = pygame.Rect(int(game['window_width'] * 0.04),
-                                      int(game['window_height'] * 0.87),
-                                      int(game['window_width'] * 0.92),
-                                      int(game['window_height'] * 0.05))
+    # Removed credit_area.
     
-    credits_button_width = 150
-    credits_button_height = 40
-    margin = 20
-    vertical_offset = 30  # Additional upward offset
     button_width = int(150 * game['window_width'] / 1200)
     gap = int(50 * game['window_width'] / 1200)
     # Removed "Optimize" from the list.
     button_labels = ["Restart", "Check Solution", "Instructions", "Dark Mode"]
     total_buttons_width = len(button_labels) * button_width + (len(button_labels) - 1) * gap
     start_x = game['button_area'].x + (game['button_area'].width - total_buttons_width) // 2
-
-    game['credits_button_rect'] = pygame.Rect(
-        start_x, 
-        game['window_height'] - credits_button_height - margin - vertical_offset,
-        credits_button_width, 
-        credits_button_height
-    )
     
     button_height = int(40 * game['window_height'] / 900)
     button_y = game['button_area'].y + (game['button_area'].height - button_height) // 2
@@ -185,10 +156,11 @@ def update_layout(game):
     game['buttons'] = buttons
 
     panel_margin = int(10 * game['window_width'] / 1200)
-    panel_width = (game['total_panel_area'].width - 4 * panel_margin) // 5
+    # Remove the "Minimum release (AF/hr)" bar by excluding it from the labels.
+    labels = ["Total revenue ($)", "Total release (AF)", "Maximum ramp up", "Maximum ramp down"]
+    panel_count = len(labels)
+    panel_width = (game['total_panel_area'].width - (panel_count - 1) * panel_margin) // panel_count
     panel_height = game['total_panel_area'].height
-    labels = ["Total revenue ($)", "Total release (AF)", "Minimum release (AF/hr)",
-              "Maximum ramp up", "Maximum ramp down"]
     total_bar_graphs = {}
     for i, label in enumerate(labels):
         x = game['total_panel_area'].x + i * (panel_width + panel_margin)
@@ -256,6 +228,13 @@ def draw_bar_graph(game):
     pygame.draw.line(screen, get_text_color(game),
                      (bar_graph_area.x, bar_graph_area.y + bar_graph_area.height),
                      (bar_graph_area.x + bar_graph_area.width, bar_graph_area.y + bar_graph_area.height), 2)
+    
+    # Add dashed horizontal lines at data value 0.2 and 2.0.
+    dashed_y_0_2 = bar_graph_area.y + bar_graph_area.height - (0.2 / max_value) * bar_graph_area.height
+    dashed_y_2_0 = bar_graph_area.y + bar_graph_area.height - (2.0 / max_value) * bar_graph_area.height
+    draw_dashed_line(screen, get_text_color(game), (bar_graph_area.x, dashed_y_0_2), (bar_graph_area.x+bar_graph_area.width, dashed_y_0_2), width=2, dash_length=5, space_length=3)
+    draw_dashed_line(screen, get_text_color(game), (bar_graph_area.x, dashed_y_2_0), (bar_graph_area.x+bar_graph_area.width, dashed_y_2_0), width=2, dash_length=5, space_length=3)
+    
     left_margin = 5
     available_width = bar_graph_area.width - left_margin
     bar_width = available_width / N_timesteps
@@ -310,14 +289,17 @@ def draw_bar_graph(game):
 def draw_total_bars(game):
     screen = game['screen']
     total_bar_graphs = game['total_bar_graphs']
+    # Remove "Minimum release (AF/hr)" from the metrics.
     metrics = {
         "Total revenue ($)": (game['total_revenue'], optimal_value, "Optimal value"),
         "Total release (AF)": (game['total_sum'], TARGET, "Daily target"),
-        "Minimum release (AF/hr)": (game['minimum_release_rate'], min_release, "Minimum rate"),
         "Maximum ramp up": (game['maximum_ramp_up_rate'], max_ramp_up, "Ramp up limit"),
         "Maximum ramp down": (game['maximum_ramp_down_rate'], max_ramp_down, "Ramp down limit"),
     }
     for key, rect in total_bar_graphs.items():
+        # Only process keys that exist in the metrics dictionary.
+        if key not in metrics:
+            continue
         value, target_value, target_name = metrics[key]
         pygame.draw.rect(screen, get_panel_color(game), rect, 2)
         max_display = target_value * 1.5 if target_value != 0 else 1
@@ -331,11 +313,11 @@ def draw_total_bars(game):
                 color = (0, 200, 0)
         elif key == "Total release (AF)":
             color = (0, 200, 0) if abs(value - target_value) <= target_tol else (200, 0, 0)
-        elif key == "Minimum release (AF/hr)":
+        elif key == "Maximum ramp up":
             color = (200, 0, 0)
-            if value >= (target_value - 0.1 * target_tol):
+            if value <= (target_value + 0.1 * target_tol):
                 color = (0, 200, 0)
-        elif key in ["Maximum ramp up", "Maximum ramp down"]:
+        elif key == "Maximum ramp down":
             color = (200, 0, 0)
             if value <= (target_value + 0.1 * target_tol):
                 color = (0, 200, 0)
@@ -379,30 +361,8 @@ def draw_buttons(game):
         text_rect = text.get_rect(center=scaled_rect.center)
         screen.blit(text, text_rect)
         
-    # Draw Credits button separately.
-    anim_scale = 1.0
-    key = "Credits"
-    if key in game['button_animations']:
-        elapsed = time.time() - game['button_animations'][key]
-        if elapsed < game['button_anim_duration']:
-            progress = elapsed / game['button_anim_duration']
-            if progress < 0.5:
-                anim_scale = 1 - 0.1 * (progress / 0.5)
-            else:
-                anim_scale = 0.9 + 0.1 * ((progress - 0.5) / 0.5)
-        else:
-            del game['button_animations'][key]
-    scaled_width = int(game['credits_button_rect'].width * anim_scale)
-    scaled_height = int(game['credits_button_rect'].height * anim_scale)
-    scaled_rect = pygame.Rect(0, 0, scaled_width, scaled_height)
-    scaled_rect.center = game['credits_button_rect'].center
-    pygame.draw.rect(screen, get_button_color(game), scaled_rect)
-    pygame.draw.rect(screen, get_button_outline_color(game), scaled_rect, 2)
-    button_label = "Close Credits" if game['show_credits'] else "Credits"
-    credits_text = game['font'].render(button_label, True, get_text_color(game))
-    credits_text_rect = credits_text.get_rect(center=scaled_rect.center)
-    screen.blit(credits_text, credits_text_rect)
-
+    # Removed Credits button and related code.
+    
 def draw_message(game):
     if game['message']:
         overlay = pygame.Surface((game['window_width'], game['window_height']), pygame.SRCALPHA)
@@ -481,7 +441,6 @@ def check_action(game):
     # Only set level complete if the solution is feasible and optimality is at least 90%.
     game['level_complete'] = game['feasible_solution'] and (revenue_pct >= 90)
 
-
 def handle_events(game):
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -494,12 +453,6 @@ def handle_events(game):
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 pos = event.pos
-                if game['credits_button_rect'].collidepoint(pos):
-                    game['button_animations']["Credits"] = time.time()
-                    game['show_credits'] = not game['show_credits']
-                    if game['show_credits']:
-                        game['credits_offset'] = game['window_height']
-                    continue
                 # If a message overlay is shown, check for its buttons.
                 if game['message']:
                     if game.get('try_again_button_rect') and game['try_again_button_rect'].collidepoint(pos):
@@ -529,7 +482,7 @@ def handle_events(game):
                 dy = game['last_mouse_y'] - event.pos[1]
                 sensitivity = 0.005
                 delta = dy * sensitivity
-                # Enforce bar values remain between 0.2 and 1.5
+                # Enforce bar values remain between 0.2 and 2.0
                 new_value = np.clip(game['y_values'][game['selected_bar']] + delta, 0.2, 2.0)
                 game['y_values'][game['selected_bar']] = new_value
                 game['last_mouse_y'] = event.pos[1]
@@ -537,7 +490,6 @@ def handle_events(game):
             if event.key == pygame.K_ESCAPE:
                 game['message'] = ""
                 game['show_instructions'] = False
-                game['show_credits'] = False
 
 def run_game(game):
     while game['running']:
@@ -551,8 +503,6 @@ def run_game(game):
         draw_total_bars(game)
         draw_timer(game)
         draw_message(game)
-        if game['show_credits']:
-            draw_credits_overlay(game)
         pygame.display.flip()
         game['clock'].tick(60)
     pygame.quit()
@@ -564,4 +514,3 @@ def main():
 if __name__ == "__main__":
     main()
 
-#Familiarize myself with levelbuild
