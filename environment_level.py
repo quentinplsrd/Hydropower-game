@@ -217,8 +217,8 @@ def draw_timer(game):
         pct_rect.bottom + int((5/600)*game['window_height'])
     ))
     game['screen'].blit(best_text, best_rect)
-    feas_text = "Feasible!" if (game['feasible_solution'] and revenue_pct <= 100) else "Infeasible"
-    feas_color = (0, 200, 0) if (game['feasible_solution'] and revenue_pct <= 100) else (200, 0, 0)
+    feas_text = "Feasible!" if (game['feasible_solution']) else "Infeasible"
+    feas_color = (0, 200, 0) if (game['feasible_solution']) else (200, 0, 0)
     feas_line = game['font'].render(feas_text, True, feas_color)
     feas_rect = feas_line.get_rect(topright=(
         game['window_width'] - int((20/800)*game['window_width']),
