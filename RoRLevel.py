@@ -1,7 +1,7 @@
 import pygame
 import sys
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import tempfile
 import os
 
@@ -17,6 +17,10 @@ WINDOW_MODE = 1
 LEVEL_DURATION = 60 # Duration of the level in seconds
 MAX_ROTATION = 90
 MAX_RELEASE = 100
+ROTATION_ANGLE = 10
+NUM_OVALS = 16
+circle_radius = 80
+BACKGROUND_COLOR = (30, 30, 30)
 
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Run of River Simulation")
@@ -67,7 +71,11 @@ def reset_game():
         'power_data' : [],
         'x_start': 0,
         'x_end': 5,
-        'level_complete': False
+        'level_complete': False,
+        'angles': [],
+        'center_x': 0,
+        'center_y': 0,
+        'positions': []
     }
 
 def get_pointer_rotation(power_generated):
@@ -106,6 +114,14 @@ except pygame.error as e:
     print(f"Error loading pointer image: {e}")
     sys.exit(1)
 
+try:
+    gate_image_path = resource_path('assets2/Wicket_gate.png')
+    gate_image = pygame.image.load(gate_image_path).convert_alpha()
+except pygame.error as e:
+    print(f"Error loading pointer image: {e}")
+    sys.exit(1)
+
+"""
 def update_graph(x_start, x_end, power_data):
     x = np.linspace(x_start, x_end, 1000)
     y_sine = 11*np.sin(x) + 14
@@ -135,19 +151,24 @@ def update_graph(x_start, x_end, power_data):
     plt.savefig(temp_file.name, dpi=200, facecolor='black')  
     plt.close()
     return temp_file.name
-
+"""
 def main():
     frames = load_frames(NUM_FRAMES, FRAME_PATH_TEMPLATE)
     SCREEN_HEIGHT = screen.get_height()
     SCREEN_WIDTH = screen.get_width()
     global WINDOW_MODE
+    global gate_image
     running = True
     game_state = reset_game()
     clock = pygame.time.Clock()
+    IMAGE_WIDTH, IMAGE_HEIGHT = gate_image.get_size()
+    game_state['angles'] = [220-i*360/NUM_OVALS for i in range(NUM_OVALS)]
 
     while running:
         SCREEN_HEIGHT = screen.get_height()
         SCREEN_WIDTH = screen.get_width()
+        global circle_radius
+        active_circle_radius = circle_radius * (SCREEN_WIDTH/800)
         for event in pygame.event.get():
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_1:
@@ -158,45 +179,54 @@ def main():
                     change_screen_size(1024, 768)
                 elif event.key == pygame.K_3:
                     WINDOW_MODE = 3
-                    change_screen_size(1920, 1080)
+                    change_screen_size(1920, 1440)
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_UP:
                     if game_state['rotation'] < 90:
-                        game_state['rotation'] = game_state['rotation'] + 10
+                        game_state['angles'] = [angle + ROTATION_ANGLE for angle in game_state['angles']]
+                        game_state['rotation'] +=  ROTATION_ANGLE
                 elif event.key == pygame.K_DOWN:
                     if game_state['rotation'] > 0:
-                        game_state['rotation'] = game_state['rotation'] - 10
+                        game_state['angles'] = [angle - ROTATION_ANGLE for angle in game_state['angles']]
+                        game_state['rotation'] -= ROTATION_ANGLE
+        active_gate_image = pygame.transform.smoothscale(gate_image,(IMAGE_WIDTH*0.0001*SCREEN_WIDTH,IMAGE_HEIGHT*0.00015*SCREEN_HEIGHT))
+        game_state['center_x'],game_state['center_y'] = SCREEN_WIDTH*.15, SCREEN_HEIGHT*.2
+        game_state['positions'] = [
+            (game_state['center_x'] + active_circle_radius * np.cos(2 * np.pi * i / NUM_OVALS),
+            game_state['center_y'] + active_circle_radius * np.sin(2 * np.pi * i / NUM_OVALS))
+            for i in range(NUM_OVALS)
+        ]
         frame_index = int((game_state['rotation'] / 10))
         frame_index = max(0, min(NUM_FRAMES - 1, frame_index))  # Clamp to valid range
-        frames[frame_index] = pygame.transform.scale(frames[frame_index], (SCREEN_WIDTH, SCREEN_HEIGHT))
-        screen.blit(frames[frame_index], (0, 0))
+        active_frame = pygame.transform.scale(frames[frame_index], (SCREEN_WIDTH, SCREEN_HEIGHT))
+        screen.blit(active_frame, (0, 0))
         if WINDOW_MODE == 1:
             performance_font = pygame.font.Font(None, 24)
         elif WINDOW_MODE == 2:
             performance_font = pygame.font.Font(None, 36)
         elif WINDOW_MODE == 3:
             performance_font = pygame.font.Font(None, 48)
-        rotation_status = f"Rotation Angle: {game_state['rotation']}"
+        rotation_status = f"Rotation: {game_state['rotation']} degrees"
         rotation_label = performance_font.render(rotation_status, True, (255,255,255))
         screen.blit(rotation_label, (0,0))
-        game_state['release'] = int((game_state['rotation']/90)*MAX_RELEASE)
+        game_state['release'] = int((1-(game_state['rotation']/90))*MAX_RELEASE)
         release_status = f"Current Release: {game_state['release']} cfs"
         release_label = performance_font.render(release_status, True, (255,255,255))
         screen.blit(release_label, (SCREEN_WIDTH*0.4,0))
         power_generated = 0.25*game_state['release']
-        power_status = f"Power Generated: {power_generated} MW"
+        power_status = f"Power Generated: {power_generated} MW/s"
         power_label = performance_font.render(power_status, True, (255,255,255))
         screen.blit(power_label,(SCREEN_WIDTH*0.045,SCREEN_HEIGHT*0.77))
         game_state['power_data'].append(power_generated)
 
-        graph_filename = update_graph(game_state['x_start'], game_state['x_end'], game_state['power_data'])
+        """graph_filename = update_graph(game_state['x_start'], game_state['x_end'], game_state['power_data'])
         graph_image = load_image(graph_filename)
         if graph_image:
             scaled_graph_image = pygame.transform.scale(graph_image, (SCREEN_WIDTH * 0.28, SCREEN_HEIGHT * 0.25))
-            screen.blit(scaled_graph_image, (SCREEN_WIDTH * 0.025, SCREEN_HEIGHT * 0.12))
-        os.remove(graph_filename)
+            screen.blit(scaled_graph_image, (SCREEN_WIDTH * 0.725, SCREEN_HEIGHT * 0.12))
+        os.remove(graph_filename) """
 
         # Trim power data to match the visible window
         if len(game_state['power_data']) > 10:
@@ -207,6 +237,15 @@ def main():
         game_state['x_end'] += 0.05
 
         draw_dial_and_pointer(screen, power_generated,SCREEN_WIDTH,SCREEN_HEIGHT)
+
+        square_size = active_circle_radius * 2.7
+        square_position = (SCREEN_WIDTH*.018, SCREEN_HEIGHT*.025)
+        pygame.draw.rect(screen, BACKGROUND_COLOR, (*square_position, square_size, square_size))
+
+        for i, (pos_x, pos_y) in enumerate(game_state['positions']):
+            rotated_image = pygame.transform.rotozoom(active_gate_image, game_state['angles'][i],1.0)
+            rect = rotated_image.get_rect(center=(pos_x, pos_y))
+            screen.blit(rotated_image, rect.topleft)
         pygame.display.flip()
 
     pygame.quit()
