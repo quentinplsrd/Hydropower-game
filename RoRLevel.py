@@ -184,13 +184,13 @@ def main():
                 running = False
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_UP:
-                    if game_state['rotation'] < 90:
-                        game_state['angles'] = [angle + ROTATION_ANGLE for angle in game_state['angles']]
-                        game_state['rotation'] +=  ROTATION_ANGLE
-                elif event.key == pygame.K_DOWN:
                     if game_state['rotation'] > 0:
                         game_state['angles'] = [angle - ROTATION_ANGLE for angle in game_state['angles']]
                         game_state['rotation'] -= ROTATION_ANGLE
+                elif event.key == pygame.K_DOWN:
+                    if game_state['rotation'] < 90:
+                        game_state['angles'] = [angle + ROTATION_ANGLE for angle in game_state['angles']]
+                        game_state['rotation'] +=  ROTATION_ANGLE
         active_gate_image = pygame.transform.smoothscale(gate_image,(IMAGE_WIDTH*0.0001*SCREEN_WIDTH,IMAGE_HEIGHT*0.00015*SCREEN_HEIGHT))
         game_state['center_x'],game_state['center_y'] = SCREEN_WIDTH*.15, SCREEN_HEIGHT*.2
         game_state['positions'] = [
