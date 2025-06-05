@@ -2,6 +2,7 @@ import pygame
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
+plt.rcParams["axes3d.mouserotationstyle"] = 'azel'
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 # Constants
@@ -83,7 +84,7 @@ def draw_3d_surface(Q_val, h_val, azim, elev):
     if fig_3d:
         plt.close(fig_3d)
     fig_3d = plt.figure(figsize=(5, 4), dpi=100)
-    ax_3d = fig_3d.add_subplot(111, projection='3d')
+    ax_3d = fig_3d.add_subplot(111, projection='3d',computed_zorder=False)
     fig_3d.subplots_adjust(left=0.15, right=0.85, bottom=0.2)
     Q = np.linspace(0, 100, 50)
     h = np.linspace(0, 100, 50)
@@ -91,7 +92,7 @@ def draw_3d_surface(Q_val, h_val, azim, elev):
     P_grid = (Q_grid * g * h_grid)/1000
     ax_3d.plot_surface(Q_grid, h_grid, P_grid, cmap='Blues', alpha=0.9)
     P_val = (Q_val * g * h_val)/1000
-    scatter = ax_3d.scatter(Q_val, h_val, P_val, color='red', s=50)
+    scatter = ax_3d.scatter(Q_val, h_val, P_val, color='red', s=50,depthshade=False)
     ax_3d.set_xlabel("Flow Rate Q (cfs)", labelpad=10)
     ax_3d.set_ylabel("Head h (ft)", labelpad=10)
     ax_3d.set_zlabel("Power P (kW)", labelpad=10)
@@ -109,7 +110,7 @@ def update_3d_surface(Q_val, h_val, azim, elev):
     global scatter, canvas_3d, ax_3d, fig_3d
     scatter.remove()
     P_val = (Q_val * g * h_val)/1000
-    scatter = ax_3d.scatter(Q_val, h_val, P_val, color='red', s=50)
+    scatter = ax_3d.scatter(Q_val, h_val, P_val, color='red', s=50,depthshade=False)
     ax_3d.view_init(elev=elev, azim=azim)
     canvas_3d.draw()
     raw_data = canvas_3d.get_renderer().buffer_rgba()
@@ -191,17 +192,18 @@ while running:
     font_large = pygame.font.Font(None, int(0.06 * HEIGHT))
     view_mode = "3D Surface Plot" if show_3d_plot else "2D Colormap"
     window.blit(font_small.render(f"{view_mode} (TAB to toggle, R to reset view)", True, BLACK), (int(0.25 * WIDTH), int(0.01 * HEIGHT)))
-    window.blit(font_small.render("η: Turbine efficiency, ρ: Water density, Q: Flow Rate, g: Gravity, h: Head", True, BLACK), (int(0.1 * WIDTH), int(0.11 * HEIGHT)))
-    window.blit(font_small.render("Explore the fundamental equation of Hydropower by adjusting the flow rate and head!", True, BLACK), (int(0.03 * WIDTH), int(0.145 * HEIGHT)))
+    window.blit(font_small.render("Constants: η: Turbine efficiency, ρ: Water density, g: Gravity", True, BLACK), (int(0.15 * WIDTH), int(0.11 * HEIGHT)))
+    window.blit(font_small.render("Variables: Q: Flow Rate, h: Head", True, BLACK), (int(0.32 * WIDTH), int(0.145 * HEIGHT)))
+    window.blit(font_small.render("Explore the fundamental equation of Hydropower by adjusting the flow rate and head!", True, BLACK), (int(0.03 * WIDTH), int(0.18 * HEIGHT)))
     window.blit(font_small.render("Click and drag sliders to adjust parameters.", True, BLACK), (int(0.25 * WIDTH), int(0.95 * HEIGHT)))
-    if (show_3d_plot): window.blit(font_small.render("Click and hold anywhere other than the sliders to rotate 3D-plot.", True, BLACK), (int(0.15 * WIDTH), int(0.18 * HEIGHT))) 
-    window.blit(font_large.render("P = ηρQgh", True, BLACK), (int(0.32 * WIDTH), int(0.055 * HEIGHT)))
+    if (show_3d_plot): window.blit(font_small.render("Click and hold anywhere other than the sliders to rotate 3D-plot.", True, BLACK), (int(0.15 * WIDTH), int(0.215 * HEIGHT))) 
+    window.blit(font_large.render("P = ηρg·Q*h", True, BLACK), (int(0.32 * WIDTH), int(0.055 * HEIGHT)))
     window.blit(font_large.render(f"P = {P:.2f} kW", True, BLACK), (int(0.52 * WIDTH), int(0.055 * HEIGHT)))
 
     # Draw/update plot in the middle
     if first_run:
         plot_surface = draw_3d_surface(Q, h, azim_angle, elev_angle) if show_3d_plot else draw_colormap(Q, h)
-        plot_rect = plot_surface.get_rect(center=(WIDTH // 2, int(0.55 * HEIGHT)))
+        plot_rect = plot_surface.get_rect(center=(WIDTH // 2, int(0.58 * HEIGHT)))
         first_run = False
     else:
         if slow_run % UPDATE_INTERVAL == 0:
