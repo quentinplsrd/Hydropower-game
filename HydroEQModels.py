@@ -197,7 +197,7 @@ while running:
     window.blit(font_small.render("Explore the fundamental equation of Hydropower by adjusting the flow rate and head!", True, BLACK), (int(0.03 * WIDTH), int(0.18 * HEIGHT)))
     window.blit(font_small.render("Click and drag sliders to adjust parameters.", True, BLACK), (int(0.25 * WIDTH), int(0.95 * HEIGHT)))
     if (show_3d_plot): window.blit(font_small.render("Click and hold anywhere other than the sliders to rotate 3D-plot.", True, BLACK), (int(0.15 * WIDTH), int(0.215 * HEIGHT))) 
-    window.blit(font_large.render("P = ηρg·Q*h", True, BLACK), (int(0.32 * WIDTH), int(0.055 * HEIGHT)))
+    window.blit(font_large.render("P = ηρg·Q·h", True, BLACK), (int(0.32 * WIDTH), int(0.055 * HEIGHT)))
     window.blit(font_large.render(f"P = {P:.2f} kW", True, BLACK), (int(0.52 * WIDTH), int(0.055 * HEIGHT)))
 
     # Draw/update plot in the middle
