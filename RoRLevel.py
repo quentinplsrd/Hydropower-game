@@ -9,23 +9,22 @@ import webbrowser
 pygame.init()
 
 # Constants
-SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 600
+SCREEN_WIDTH = 1024
+SCREEN_HEIGHT = 768
+WINDOW_MODE = 2
 NUM_FRAMES = 61
 FRAME_PATH_TEMPLATE = 'assets2/RoRLoopFrames/RoRLoopFrame{}.jpg'
-WINDOW_MODE = 1
 LEVEL_DURATION = 60
 MAX_ROTATION = 80
 MAX_RELEASE = 100
 ROTATION_ANGLE = 10
 NUM_OVALS = 16
-CIRCLE_RADIUS = 70
 BACKGROUND_COLOR = (30, 30, 30)
 REDI_ISLAND_URL = "https://www1.eere.energy.gov/apps/water/redi_island/#/large-island/"
 
 
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Run of River Simulation")
+pygame.display.set_caption("Run of River Level")
 font = pygame.font.SysFont(None, 24)
 
 def resource_path(relative_path):
@@ -37,7 +36,7 @@ def resource_path(relative_path):
 
 def load_image(filename):
     try:
-        return pygame.image.load(filename).convert_alpha()
+        return pygame.image.load(resource_path(filename)).convert_alpha()
     except pygame.error as e:
         print(f"Unable to load image: {e}")
         return None
@@ -48,6 +47,7 @@ def load_frames(num_frames, path_template):
         try:
             frame_path = resource_path(path_template.format(i))
             frame = pygame.image.load(frame_path).convert()
+            frame = pygame.transform.scale(frame, (SCREEN_WIDTH, SCREEN_HEIGHT))
             frames.append(frame)
         except pygame.error as e:
             print(f"Error loading frame {i}: {e}")
@@ -78,7 +78,7 @@ def reset_game():
 
 def update_graph(x_start, x_end, power_data):
     x = np.linspace(x_start, x_end, 1000)
-    y_sine = 11 * np.sin(x) + 14
+    y_sine = 11 * np.sin(0.75*x+1) + 14
     power_x = np.linspace(x_start, x_start + 0.5, len(power_data))
 
     plt.figure(figsize=(4, 3), facecolor=(0, 0, 0, 0))
@@ -108,35 +108,85 @@ up_inactive_image = load_image('assets2/IKM_Assets/UpButtonInactive.png')
 down_active_image = load_image('assets2/IKM_Assets/DownButtonActive.png')
 down_inactive_image = load_image('assets2/IKM_Assets/DownButtonInactive.png')
 border_frame_image = load_image('assets2/IKM_Assets/BorderFrame.png')
-
-gate_image_path = resource_path('assets2/Wicket_gate.png')
-gate_image = pygame.image.load(gate_image_path).convert_alpha()
+gate_image = load_image('assets2/Wicket_gate.png')
 
 def main():
+    global SCREEN_WIDTH, SCREEN_HEIGHT, screen
+    clock = pygame.time.Clock()
     frames = load_frames(NUM_FRAMES, FRAME_PATH_TEMPLATE)
     frame_index = 0
-    global WINDOW_MODE
+    window_mode = 2
     running = True
     game_state = reset_game()
-    IMAGE_WIDTH, IMAGE_HEIGHT = gate_image.get_size()
     game_state['angles'] = [220 - i * 360 / NUM_OVALS for i in range(NUM_OVALS)]
+    active_circle_radius = 0.0875*SCREEN_WIDTH*(SCREEN_WIDTH/800)
 
+
+    box_width = int(SCREEN_WIDTH * 0.35)
+    box_height = int(SCREEN_HEIGHT * 0.06)
+    box_x = SCREEN_WIDTH - box_width - int(SCREEN_WIDTH * 0.02)
+    box_y = SCREEN_HEIGHT - box_height - int(SCREEN_HEIGHT * 0.02)
+    clickable_rect = pygame.Rect(box_x, box_y, box_width, box_height)
+
+    graph_width = int(SCREEN_WIDTH * 0.325)
+    graph_height = int(SCREEN_HEIGHT * 0.305)
+    graph_x = SCREEN_WIDTH - graph_width - SCREEN_WIDTH * 0.02 
+    graph_y = int(SCREEN_HEIGHT * 0.075) 
+    graph_border = pygame.transform.smoothscale(border_frame_image, (int(graph_width*1.025), int(graph_height*1.025)))
+
+    button_width = SCREEN_WIDTH * 0.08 / 3
+    button_height = SCREEN_HEIGHT * 0.1 / 3
+    button_x = SCREEN_WIDTH * 0.45
+    up_button_y = SCREEN_HEIGHT * 0.87
+    down_button_y = SCREEN_HEIGHT * 0.93
+
+    # --- Draw Wicket Gate Frame and Label ---
+    frame_size = int(active_circle_radius * 2.7)
+    frame_x = int(SCREEN_WIDTH * 0.018)
+    frame_y = int(SCREEN_HEIGHT * 0.043)
+
+    
+    scaled_frame = pygame.transform.smoothscale(border_frame_image, (frame_size, frame_size))
+
+    scaled_panel = pygame.transform.smoothscale(control_panel_image, (int(SCREEN_WIDTH * 0.5), int(SCREEN_HEIGHT * 0.2)))
+
+    # Define gate size as a fraction of the frame
+    gate_scale_factor = 0.18  # 20% of the frame size
+
+    gate_size = int(frame_size * gate_scale_factor)
+    active_gate_image = pygame.transform.smoothscale(gate_image, (gate_size, gate_size))
+
+    game_state['center_x'], game_state['center_y'] = frame_x + frame_size / 2, frame_y + frame_size / 2
+    game_state['positions'] = [
+        (game_state['center_x'] + active_circle_radius * np.cos(2 * np.pi * i / NUM_OVALS),
+            game_state['center_y'] + active_circle_radius * np.sin(2 * np.pi * i / NUM_OVALS))
+        for i in range(NUM_OVALS)
+    ]
+
+    scaled_border = pygame.transform.smoothscale(border_frame_image, (box_width, box_height))
    
     while running:
-        SCREEN_HEIGHT = screen.get_height()
-        SCREEN_WIDTH = screen.get_width()
-        active_circle_radius = CIRCLE_RADIUS * (SCREEN_WIDTH / 800)
-
-        # Calculate clickable URL box rect each frame
-        box_width = int(SCREEN_WIDTH * 0.35)
-        box_height = int(SCREEN_HEIGHT * 0.06)
-        box_x = SCREEN_WIDTH - box_width - int(SCREEN_WIDTH * 0.02)
-        box_y = SCREEN_HEIGHT - box_height - int(SCREEN_HEIGHT * 0.02)
-        clickable_rect = pygame.Rect(box_x, box_y, box_width, box_height)
-
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_1:
+                    window_mode = 1
+                    change_screen_size(800, 600)
+                elif event.key == pygame.K_2:
+                    window_mode = 2
+                    change_screen_size(1024, 768)
+                elif event.key == pygame.K_3:
+                    window_mode = 3
+                    change_screen_size(1920, 1440)
+                elif event.key == pygame.K_UP:
+                    if game_state['rotation'] > 0:
+                        game_state['angles'] = [angle - ROTATION_ANGLE for angle in game_state['angles']]
+                        game_state['rotation'] -= ROTATION_ANGLE
+                elif event.key == pygame.K_DOWN:
+                    if game_state['rotation'] < 80:
+                        game_state['angles'] = [angle + ROTATION_ANGLE for angle in game_state['angles']]
+                        game_state['rotation'] += ROTATION_ANGLE
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mouse_x, mouse_y = pygame.mouse.get_pos()
                 if clickable_rect.collidepoint(mouse_x, mouse_y):
@@ -149,24 +199,24 @@ def main():
                     if game_state['rotation'] < 80:
                         game_state['angles'] = [angle + ROTATION_ANGLE for angle in game_state['angles']]
                         game_state['rotation'] += ROTATION_ANGLE
+            elif event.type == pygame.MOUSEWHEEL:
+                if event.y > 0 and game_state['rotation'] > 0:  # Scroll up
+                    game_state['angles'] = [angle - ROTATION_ANGLE for angle in game_state['angles']]
+                    game_state['rotation'] -= ROTATION_ANGLE
+                elif event.y < 0 and game_state['rotation'] < 80:  # Scroll down
+                    game_state['angles'] = [angle + ROTATION_ANGLE for angle in game_state['angles']]
+                    game_state['rotation'] += ROTATION_ANGLE
 
-        active_gate_image = pygame.transform.smoothscale(gate_image, (int(IMAGE_WIDTH * 0.0001 * SCREEN_WIDTH), int(IMAGE_HEIGHT * 0.00015 * SCREEN_HEIGHT)))
-        game_state['center_x'], game_state['center_y'] = SCREEN_WIDTH * .135, SCREEN_HEIGHT * .2
-        game_state['positions'] = [
-            (game_state['center_x'] + active_circle_radius * np.cos(2 * np.pi * i / NUM_OVALS),
-             game_state['center_y'] + active_circle_radius * np.sin(2 * np.pi * i / NUM_OVALS))
-            for i in range(NUM_OVALS)
-        ]
 
-        active_frame = pygame.transform.scale(frames[frame_index], (SCREEN_WIDTH, SCREEN_HEIGHT))
+        active_frame = frames[frame_index]
         frame_index = (frame_index + 1) % NUM_FRAMES
         screen.blit(active_frame, (0, 0))
 
-        if WINDOW_MODE == 1:
+        if window_mode == 1:
             performance_font = pygame.font.Font(None, 24)
-        elif WINDOW_MODE == 2:
+        elif window_mode == 2:
             performance_font = pygame.font.Font(None, 36)
-        elif WINDOW_MODE == 3:
+        elif window_mode == 3:
             performance_font = pygame.font.Font(None, 48)
 
         game_state['release'] = int((1 - (game_state['rotation'] / 80)) * MAX_RELEASE) + 10
@@ -175,22 +225,18 @@ def main():
 
         graph_filename = update_graph(game_state['x_start'], game_state['x_end'], game_state['power_data'])
         graph_image = load_image(graph_filename)
-        if graph_image:
-            graph_width = int(SCREEN_WIDTH * 0.265)
-            graph_height = int(SCREEN_HEIGHT * 0.235)
-            scaled_graph_image = pygame.transform.scale(graph_image, (graph_width, graph_height))
-            graph_x = SCREEN_WIDTH - graph_width - SCREEN_WIDTH * 0.02 
-            graph_y = int(SCREEN_HEIGHT * 0.075) 
-            graph_border = pygame.transform.smoothscale(border_frame_image, (int(graph_width*1.025), int(graph_height*1.025)))
-            screen.blit(graph_border, (graph_x, graph_y))
-            screen.blit(scaled_graph_image, (graph_x, graph_y))
+        
+        
+        scaled_graph_image = pygame.transform.scale(graph_image, (graph_width, graph_height))
+        screen.blit(graph_border, (graph_x, graph_y))
+        screen.blit(scaled_graph_image, (graph_x, graph_y))
         if len(game_state['power_data']) > 10:
             game_state['power_data'] = game_state['power_data'][-10:]
 
         game_state['x_start'] += 0.05
         game_state['x_end'] += 0.05
 
-        scaled_panel = pygame.transform.smoothscale(control_panel_image, (int(SCREEN_WIDTH * 0.5), int(SCREEN_HEIGHT * 0.2)))
+       
         screen.blit(scaled_panel, (0, SCREEN_HEIGHT * .8))
 
         rotation_status = f"Rotation: {game_state['rotation']} degrees"
@@ -201,11 +247,6 @@ def main():
         screen.blit(performance_font.render(release_status, True, (255, 255, 255)), (SCREEN_WIDTH * 0.02, SCREEN_HEIGHT * 0.90))
         screen.blit(performance_font.render(power_status, True, (255, 255, 255)), (SCREEN_WIDTH * 0.02, SCREEN_HEIGHT * 0.95))
 
-        button_width = SCREEN_WIDTH * 0.08 / 3
-        button_height = SCREEN_HEIGHT * 0.1 / 3
-        button_x = SCREEN_WIDTH * 0.45
-        up_button_y = SCREEN_HEIGHT * 0.87
-        down_button_y = SCREEN_HEIGHT * 0.93
 
         up_button = pygame.transform.scale(up_active_image if game_state['rotation'] > 0 else up_inactive_image, (int(button_width), int(button_height)))
         down_button = pygame.transform.scale(down_active_image if game_state['rotation'] < 80 else down_inactive_image, (int(button_width), int(button_height)))
@@ -216,22 +257,13 @@ def main():
         screen.blit(up_button, up_button_rect.topleft)
         screen.blit(down_button, down_button_rect.topleft)
 
-        # --- Draw Wicket Gate Frame and Label ---
-        frame_size = int(active_circle_radius * 2.7)
-        frame_x = int(SCREEN_WIDTH * 0.018)
-        frame_y = int(SCREEN_HEIGHT * 0.043)
+        screen.blit(scaled_frame, (frame_x, frame_y))
 
-        if border_frame_image:
-            scaled_frame = pygame.transform.smoothscale(border_frame_image, (frame_size, frame_size))
-            screen.blit(scaled_frame, (frame_x, frame_y))
-        else:
-            pygame.draw.rect(screen, BACKGROUND_COLOR, (frame_x, frame_y, frame_size, frame_size))
-
-        label_font = pygame.font.Font(None, int(SCREEN_HEIGHT * 0.03))
-        label_surface = label_font.render("Wicket Gate Display", True, (255, 255, 255))
+        label_surface = performance_font.render("Wicket Gate Display", True, (255, 255, 255))
         label_rect = label_surface.get_rect(center=(frame_x + frame_size / 2, frame_y - SCREEN_HEIGHT * 0.015))
         screen.blit(label_surface, label_rect)
 
+        
         # --- Draw the rotating gates ---
         for i, (pos_x, pos_y) in enumerate(game_state['positions']):
             rotated_image = pygame.transform.rotozoom(active_gate_image, game_state['angles'][i], 1.0)
@@ -239,17 +271,14 @@ def main():
             screen.blit(rotated_image, rect.topleft)
 
         # --- Draw clickable REDi Island box ---
-        if border_frame_image:
-            scaled_border = pygame.transform.smoothscale(border_frame_image, (box_width, box_height))
-            screen.blit(scaled_border, (box_x, box_y))
-        else:
-            pygame.draw.rect(screen, (50, 50, 50), (box_x, box_y, box_width, box_height))
+        screen.blit(scaled_border, (box_x, box_y))
 
         label_surface_small = performance_font.render("Click here to view REDi Island", True, (255, 255, 255))
         label_rect_small = label_surface_small.get_rect(center=(box_x + box_width / 2, box_y + box_height / 2))
         screen.blit(label_surface_small, label_rect_small)
 
         pygame.display.flip()
+        clock.tick(30)
 
     pygame.quit()
     sys.exit()
