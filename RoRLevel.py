@@ -9,11 +9,12 @@ import webbrowser
 pygame.init()
 
 # Constants
-SCREEN_WIDTH = 1024
-SCREEN_HEIGHT = 768
+SCREEN_WIDTH = 1600
+SCREEN_HEIGHT = 900
 WINDOW_MODE = 2
-NUM_FRAMES = 61
-FRAME_PATH_TEMPLATE = 'assets2/RoRLoopFrames/RoRLoopFrame{}.jpg'
+NUM_FRAMES = 62
+WATER_PATH_TEMPLATE = 'assets2/RoRWaterFrames/RoRLoopFrame_{}.jpg'
+TUBE_PATH_TEMPLATE = 'assets2/RoRTubeFrames/RoRLoopFrame_{}.jpg'
 LEVEL_DURATION = 60
 MAX_ROTATION = 80
 MAX_RELEASE = 100
@@ -47,7 +48,7 @@ def load_frames(num_frames, path_template):
         try:
             frame_path = resource_path(path_template.format(i))
             frame = pygame.image.load(frame_path).convert()
-            frame = pygame.transform.scale(frame, (SCREEN_WIDTH, SCREEN_HEIGHT))
+            frame = pygame.transform.scale(frame, (frame.get_size()[0]*SCREEN_WIDTH/1920, frame.get_size()[1]*SCREEN_HEIGHT/1080))
             frames.append(frame)
         except pygame.error as e:
             print(f"Error loading frame {i}: {e}")
@@ -84,7 +85,7 @@ def update_graph(x_start, x_end, power_data):
     plt.figure(figsize=(4, 3), facecolor=(0, 0, 0, 0))
     ax = plt.gca()
     ax.set_facecolor((0, 0, 0, 0))
-    plt.plot(power_x, power_data, label='Power Generated', color='blue')
+    plt.plot(power_x, power_data, label='Power Generated', color='deepskyblue')
     plt.plot(x, y_sine, label='Load Curve', color='white')
     plt.xlim(x_start, x_end)
     plt.ylim(-0.8, 30.5)
@@ -102,25 +103,28 @@ def update_graph(x_start, x_end, power_data):
 
 
 # Load assets
+static_image = load_image('assets2/RoRStatics/RoRStatic.jpg')
 control_panel_image = load_image('assets2/IKM_Assets/ControlPanel.png')
 up_active_image = load_image('assets2/IKM_Assets/UpButtonActive.png')
 up_inactive_image = load_image('assets2/IKM_Assets/UpButtonInactive.png')
 down_active_image = load_image('assets2/IKM_Assets/DownButtonActive.png')
 down_inactive_image = load_image('assets2/IKM_Assets/DownButtonInactive.png')
 border_frame_image = load_image('assets2/IKM_Assets/BorderFrame.png')
-gate_image = load_image('assets2/Wicket_gate.png')
+gate_image = load_image('assets2/RoRStatics/Wicket_gate.png')
 
 def main():
     global SCREEN_WIDTH, SCREEN_HEIGHT, screen
     clock = pygame.time.Clock()
-    frames = load_frames(NUM_FRAMES, FRAME_PATH_TEMPLATE)
+    water_frames = load_frames(NUM_FRAMES, WATER_PATH_TEMPLATE)
+    tube_frames = load_frames(NUM_FRAMES, TUBE_PATH_TEMPLATE)
     frame_index = 0
     window_mode = 2
     running = True
     game_state = reset_game()
     game_state['angles'] = [220 - i * 360 / NUM_OVALS for i in range(NUM_OVALS)]
-    active_circle_radius = 0.0875*SCREEN_WIDTH*(SCREEN_WIDTH/800)
+    active_circle_radius = SCREEN_WIDTH * 0.0875
 
+    statics_image = pygame.transform.smoothscale(static_image, (SCREEN_WIDTH, SCREEN_HEIGHT))
 
     box_width = int(SCREEN_WIDTH * 0.35)
     box_height = int(SCREEN_HEIGHT * 0.06)
@@ -128,16 +132,17 @@ def main():
     box_y = SCREEN_HEIGHT - box_height - int(SCREEN_HEIGHT * 0.02)
     clickable_rect = pygame.Rect(box_x, box_y, box_width, box_height)
 
-    graph_width = int(SCREEN_WIDTH * 0.325)
-    graph_height = int(SCREEN_HEIGHT * 0.305)
+    graph_width = (1200*screen.get_size()[0] / 1920)/2.8
+    graph_height = (900*screen.get_size()[1] / 1080)/2.8
     graph_x = SCREEN_WIDTH - graph_width - SCREEN_WIDTH * 0.02 
     graph_y = int(SCREEN_HEIGHT * 0.075) 
     graph_border = pygame.transform.smoothscale(border_frame_image, (int(graph_width*1.025), int(graph_height*1.025)))
 
-    button_width = SCREEN_WIDTH * 0.08 / 3
-    button_height = SCREEN_HEIGHT * 0.1 / 3
+    # Button positioning
+    button_width = up_active_image.get_width() * SCREEN_WIDTH / 1920
+    button_height = up_active_image.get_height() * SCREEN_HEIGHT / 1080
     button_x = SCREEN_WIDTH * 0.45
-    up_button_y = SCREEN_HEIGHT * 0.87
+    up_button_y = SCREEN_HEIGHT * 0.83
     down_button_y = SCREEN_HEIGHT * 0.93
 
     # --- Draw Wicket Gate Frame and Label ---
@@ -148,7 +153,7 @@ def main():
     
     scaled_frame = pygame.transform.smoothscale(border_frame_image, (frame_size, frame_size))
 
-    scaled_panel = pygame.transform.smoothscale(control_panel_image, (int(SCREEN_WIDTH * 0.5), int(SCREEN_HEIGHT * 0.2)))
+    scaled_panel = pygame.transform.smoothscale(control_panel_image, ((control_panel_image.get_size()[0] * SCREEN_WIDTH / 1920)/2, (control_panel_image.get_size()[1] * SCREEN_HEIGHT / 1080)/2))
 
     # Define gate size as a fraction of the frame
     gate_scale_factor = 0.18  # 20% of the frame size
@@ -178,7 +183,7 @@ def main():
                     change_screen_size(1024, 768)
                 elif event.key == pygame.K_3:
                     window_mode = 3
-                    change_screen_size(1920, 1440)
+                    change_screen_size(1600, 900)
                 elif event.key == pygame.K_UP:
                     if game_state['rotation'] > 0:
                         game_state['angles'] = [angle - ROTATION_ANGLE for angle in game_state['angles']]
@@ -207,10 +212,13 @@ def main():
                     game_state['angles'] = [angle + ROTATION_ANGLE for angle in game_state['angles']]
                     game_state['rotation'] += ROTATION_ANGLE
 
-
-        active_frame = frames[frame_index]
-        frame_index = (frame_index + 1) % NUM_FRAMES
-        screen.blit(active_frame, (0, 0))
+        active_water_frame = water_frames[frame_index]
+        active_tube_frame = tube_frames[frame_index]
+        frame_index = (frame_index + 1) % (NUM_FRAMES-1)
+        screen.blit(statics_image, (0, 0))
+        screen.blit(active_water_frame, (int(SCREEN_WIDTH*.5256), int(SCREEN_HEIGHT*.72779)))
+        screen.blit(active_tube_frame, (1, SCREEN_HEIGHT*.3286))
+        
 
         if window_mode == 1:
             performance_font = pygame.font.Font(None, 24)
