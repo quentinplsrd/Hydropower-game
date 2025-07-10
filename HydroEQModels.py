@@ -10,7 +10,7 @@ g = 9.81  # Gravity
 pygame.init()
 
 # Display resolution
-WIDTH, HEIGHT = 800, 600
+WIDTH, HEIGHT = 1920, 1080
 window = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Hydropower Visualization")
 

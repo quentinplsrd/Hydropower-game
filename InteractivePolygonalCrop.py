@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
 
 # Folder paths
-input_folder = "Frames/DamTurbineLoopFrames"
-output_folder = "Cropped Frames/DamTurbine4FlowFrames"
+input_folder = "assets2/RoRLoopFrames"
+output_folder = "assets2/RoRTubeFrames"
 os.makedirs(output_folder, exist_ok=True)
 
 # Globals
@@ -18,13 +18,12 @@ toolbar = None
 
 # Draw the polygon on the image
 def draw_polygon():
-    # Preserve current zoom state
     xlim = ax.get_xlim()
     ylim = ax.get_ylim()
 
     ax.clear()
     ax.imshow(first_image)
-    ax.set_title("Click to draw polygon. Press 'Finish' when done.\n'u' to undo, zoom/pan with toolbar")
+    ax.set_title("Click to draw polygon. Press 'Finish' when done.\n'u' to undo, 'r' to reset, zoom/pan with toolbar")
 
     if polygon_points:
         xs, ys = zip(*polygon_points)
@@ -32,7 +31,10 @@ def draw_polygon():
         if len(polygon_points) > 2:
             ax.plot([xs[-1], xs[0]], [ys[-1], ys[0]], 'r-')
 
-    # Restore zoom state
+    # Highlight first point (optional visual aid)
+    if polygon_points:
+        ax.plot(polygon_points[0][0], polygon_points[0][1], 'go', markersize=8)
+
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
     fig.canvas.draw()
@@ -40,20 +42,34 @@ def draw_polygon():
 # Handle click events
 def onclick(event):
     if toolbar.mode != '' or event.inaxes is None:
-        return  # Ignore if zoom/pan active or click outside image
+        return  # Ignore if zoom/pan is active
 
     if event.xdata is not None and event.ydata is not None:
+        h, w = first_image.shape[:2]
         x, y = int(event.xdata), int(event.ydata)
-        if (x, y) != (0, 0):
+
+        # Snap to edges if within 5 pixels
+        if abs(x - 0) < 5: x = 0
+        elif abs(x - (w - 1)) < 5: x = w - 1
+        if abs(y - 0) < 5: y = 0
+        elif abs(y - (h - 1)) < 5: y = h - 1
+
+        if (x, y) != (0, 0):  # Still reject (0,0) misclicks
             polygon_points.append((x, y))
             draw_polygon()
         else:
             print("Ignored click at (0, 0)")
 
-# Handle keypress
+# Handle keypresses
 def on_key(event):
+    global polygon_points
+    h, w = first_image.shape[:2]
+
     if event.key == 'u' and polygon_points:
         polygon_points.pop()
+        draw_polygon()
+    elif event.key == 'r':
+        polygon_points = []
         draw_polygon()
 
 # Handle Finish button
@@ -90,9 +106,9 @@ first_image = cv2.cvtColor(cv2.imread(first_image_path), cv2.COLOR_BGR2RGB)
 fig, ax = plt.subplots()
 plt.subplots_adjust(bottom=0.2)
 img_artist = ax.imshow(first_image)
-ax.set_title("Click to draw polygon. Press 'Finish' when done.\n'u' to undo, zoom/pan with toolbar")
+ax.set_title("Click to draw polygon. Press 'Finish' when done.\n'u' to undo, 'r' to reset, zoom/pan with toolbar")
 
-# Grab the toolbar reference
+# Grab toolbar reference
 toolbar = plt.get_current_fig_manager().toolbar
 
 # Connect events
@@ -104,9 +120,10 @@ finish_ax = plt.axes([0.81, 0.05, 0.1, 0.075])
 button = Button(finish_ax, 'Finish')
 button.on_clicked(on_finish)
 
+# Show interactive window
 plt.show()
 
-# Process if drawing was completed
+# After drawing is complete
 if done_drawing and len(polygon_points) >= 3:
     print("Drawing complete. Applying crop to all frames...")
 
@@ -115,7 +132,8 @@ if done_drawing and len(polygon_points) >= 3:
 
     for filename in image_files:
         input_path = os.path.join(input_folder, filename)
-        output_path = os.path.join(output_folder, filename)
+        output_filename = os.path.splitext(filename)[0] + ".png"
+        output_path = os.path.join(output_folder, output_filename)
 
         image = cv2.imread(input_path)
         masked_image = apply_mask(image, mask)

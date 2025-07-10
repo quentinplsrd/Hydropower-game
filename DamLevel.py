@@ -9,19 +9,29 @@ import webbrowser
 pygame.init()
 
 # Constants
-SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 600
-FPS = 60
-NUM_FRAMES = 170  # Number of frames to load
-FRAME_PATH_TEMPLATE = 'assets2/scene{}.png'
+SCREEN_WIDTH = 1600
+SCREEN_HEIGHT = 900
+FPS = 30
+NUM_FLOW_FRAMES = 37
+FLOW_PATH_TEMPLATE = 'assets2/DamSequences/Flow Cuts/Flow1_frame_{}.jpg'
+FLOW2_PATH_TEMPLATE = 'assets2/DamSequences/Flow Cuts 2/Flow2_frame_{}.jpg'
+FLOW3_PATH_TEMPLATE = 'assets2/DamSequences/Flow Cuts 3/Flow3_frame_{}.jpg'
+FLOW4_PATH_TEMPLATE = 'assets2/DamSequences/Flow Cuts 4/Flow4_frame_{}.jpg'
+NUM_TURBINE_FRAMES = 34
+TURBINE_PATH_TEMPLATE = 'assets2/DamSequences/Turbine Cuts/Turbine1_frame_{}.jpg'
+TURBINE2_PATH_TEMPLATE = 'assets2/DamSequences/Turbine Cuts 2/Turbine2_frame_{}.jpg'
+TURBINE3_PATH_TEMPLATE = 'assets2/DamSequences/Turbine Cuts 3/Turbine3_frame_{}.jpg'
+TURBINE4_PATH_TEMPLATE = 'assets2/DamSequences/Turbine Cuts 4/Turbine4_frame_{}.jpg'
+NUM_WATER_FRAMES = 127
+WATER_PATH_TEMPLATE = 'assets2/DamSequences/WaterLevels/WaterLevel_{}.jpg'
+NUM_SPILLWAY_FRAMES = 25
+SPILLWAY_PATH_TEMPLATE = 'assets2/DamSequences/Spillway Cuts/Spillway_frame_{}.jpg'
 MAX_WATER_LEVEL = 4  # Maximum water level for game over
-GATE_WIDTH = 0.01
-GATE_HEIGHT = 0.1667
-GATE_MOVE_DISTANCE = 0.08333  # Distance the gate moves per frame
-FADE_IN_DURATION = 2.0  # Duration of fade-in effect in seconds
 WATER_LEVEL_THRESHOLD = 0.01 * MAX_WATER_LEVEL  # 1% of the max water level
-WINDOW_MODE = 1
-LEVEL_DURATION = 60 # Duration of the level in seconds
+WINDOW_MODE = 2  # Default window mode (1: small, 2: medium, 3: large)
+LEVEL_DURATION = 360 # Duration of the level in seconds
+BAR_IMAGE_PATH_TEMPLATE = 'assets2/IKM_Assets/AnimatedBarSequence/Bar_{}.png'
+BAR_IMAGE_COUNT = 101 # Bar_0 to Bar_100
 
 # URL to open
 WEBPAGE_URL = "https://www1.eere.energy.gov/apps/water/redi_island/#/large-island/"
@@ -29,6 +39,20 @@ WEBPAGE_URL = "https://www1.eere.energy.gov/apps/water/redi_island/#/large-islan
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Hydropower Dam Simulation")
 font = pygame.font.SysFont(None, 24)
+
+def load_bar_frames():
+    frames = []
+    for i in range(BAR_IMAGE_COUNT):
+        try:
+            path = resource_path(BAR_IMAGE_PATH_TEMPLATE.format(i))
+            image = pygame.image.load(path).convert_alpha()
+            rotated_bar_image = pygame.transform.rotate(image, 90)
+            image = pygame.transform.scale(rotated_bar_image, ((image.get_size()[0]*SCREEN_WIDTH/1920)/2, (image.get_size()[1]*SCREEN_HEIGHT/1080)))
+            frames.append(image)
+        except pygame.error as e:
+            print(f"Error loading bar frame {i}: {e}")
+            sys.exit(1)
+    return frames
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -42,10 +66,11 @@ def resource_path(relative_path):
 def load_frames(num_frames, path_template):
     """Load and scale frames for animation."""
     frames = []
-    for i in range(1, num_frames + 1):
+    for i in range(0, num_frames):
         try:
             frame_path = resource_path(path_template.format(i))
             frame = pygame.image.load(frame_path).convert()
+            frame = pygame.transform.scale(frame, (int(frame.get_size()[0]*SCREEN_WIDTH/1920), int(frame.get_size()[1]*SCREEN_HEIGHT/1080)))
             frames.append(frame)
         except pygame.error as e:
             print(f"Error loading frame {i}: {e}")
@@ -54,37 +79,33 @@ def load_frames(num_frames, path_template):
 
 def update_graph(x_start, x_end, power_data):
     x = np.linspace(x_start, x_end, 1000)
-    y_sine = 2*np.sin(x) + 6
+    y_sine = -4*np.cos(x) + 4.5
 
     # Calculate x-values for power data
     power_x = np.linspace(x_start, x_start + 0.5, len(power_data))
 
-    plt.figure(figsize=(4, 3), facecolor='black')  # Set figure background color to black
-    ax = plt.gca()  # Get current axes
-    ax.set_facecolor('black') 
-    plt.plot(power_x, power_data, label='Power Generated', color='red')
-    plt.plot(x, y_sine, label='Load Curve', color='white')  # Change line color for visibility
+    plt.figure(figsize=(4, 3), facecolor=(0, 0, 0, 0))
+    ax = plt.gca()
+    ax.set_facecolor((0, 0, 0, 0))
+    plt.plot(power_x, power_data, label='Power Generated', color='deepskyblue')
+    plt.plot(x, y_sine, label='Load Curve', color='white')
     plt.xlim(x_start, x_end)
-    plt.ylim(-0.5, 12)
-    #plt.fill_between(power_x,power_data,y_sine[0:len(power_data)])
+    plt.ylim(-0.5, 10)
+    plt.axis('off')
 
-    # Set legend with white text
-    legend = plt.legend(loc='upper right', facecolor='black', edgecolor='white', fontsize=14)
+    legend = plt.legend(loc='upper right', facecolor='none', edgecolor='none', fontsize=14)
     for text in legend.get_texts():
-        text.set_color('white')  # Set legend text color to white
+        text.set_color('white')
 
-    plt.axis('off')  
-    plt.tight_layout()  # Automatically adjust subplot parameters
-
-    # Use a temporary file for the graph image
+    plt.tight_layout()
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-    plt.savefig(temp_file.name, dpi=200, facecolor='black')  
+    plt.savefig(temp_file.name, dpi=300, transparent=True)
     plt.close()
     return temp_file.name
 
 def load_image(filename):
     try:
-        return pygame.image.load(filename).convert()
+        return pygame.image.load(resource_path(filename)).convert_alpha()
     except pygame.error as e:
         print(f"Unable to load image: {e}")
         return None
@@ -95,16 +116,12 @@ def reset_game():
         'started' : False,
         'water_level': 0.0,
         'water_volume': 0.0,
-        'intake_rate': 2.0,
+        'intake_rate': 1.5,
         'base_outer_flow': 2.8,
         'active_outer_flow': 2.8,
         'spillway_rate': 0.0,
         'wasted_water': 0.0,
-        'gates': [
-            {'x': 0.4, 'initial_y': 0.458, 'y': 0.458, 'target_y': 0.458, 'open_y': 0.37467},
-            {'x': 0.4375, 'initial_y': 0.5, 'y': 0.5, 'target_y': 0.5, 'open_y': 0.41667},
-            {'x': 0.475, 'initial_y': 0.533, 'y': 0.533, 'target_y': 0.533, 'open_y': 0.44967}
-        ],
+        'gates': [0,0,0,0],
         'power_data': [],
         'x_start': 0,
         'x_end': 5,
@@ -123,43 +140,7 @@ def change_screen_size(width, height):
     global screen
     screen = pygame.display.set_mode((width, height))
 
-try:
-    dial_image_path = resource_path('assets2/dial.png')
-    dial_image = pygame.image.load(dial_image_path).convert_alpha()
-except pygame.error as e:
-    print(f"Error loading dial image: {e}")
-    sys.exit(1)
-
-try:
-    pointer_image_path = resource_path('assets2/pointer.png')
-    pointer_image = pygame.image.load(pointer_image_path).convert_alpha()
-except pygame.error as e:
-    print(f"Error loading pointer image: {e}")
-    sys.exit(1)
-
-def get_pointer_rotation(power_generated):
-    """Calculate the rotation angle for the pointer based on power generated."""
-    clamped_power = min(max(power_generated, 0), 10)  # Clamp power to a maximum of 10
-    return (clamped_power / 10) * 120  # Calculate rotation angle (0 to 120 degrees)
-
-def draw_dial_and_pointer(screen, power_generated, WIDTH, HEIGHT):
-    """Draw the dial and pointer on the screen."""
-    dial_size = (int(WIDTH * 0.3), int(HEIGHT * 0.2))
-    dial_image_scaled = pygame.transform.scale(dial_image, dial_size)
-    pointer_size = (WIDTH*0.1, HEIGHT*0.1)
-    pointer_image_scaled = pygame.transform.scale(pointer_image, pointer_size)
-
-    dial_position = (WIDTH*0.01, HEIGHT*0.8)
-
-    rotation_angle = get_pointer_rotation(power_generated)
-    pointer_rotated = pygame.transform.rotate(pointer_image_scaled, -rotation_angle)
-
-    pointer_rect = pointer_rotated.get_rect(center=dial_image_scaled.get_rect(topleft=dial_position).center)
-
-    screen.blit(dial_image_scaled, dial_position)
-    screen.blit(pointer_rotated, pointer_rect.topleft)
-
-def draw_start_screen(screen, font):
+def draw_start_screen(screen):
     """Draw the start screen with a start button."""
     screen.fill((0, 0, 0))  # Fill the screen with black
 
@@ -187,7 +168,7 @@ def draw_start_screen(screen, font):
 def start_screen(game_state):
     """Display the start screen and wait for the player to click the start button."""
     while True:
-        start_rect = draw_start_screen(screen, font)
+        start_rect = draw_start_screen(screen)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
@@ -198,109 +179,153 @@ def start_screen(game_state):
                     return  # Exit the start screen and begin the game
 
 def main():
-    frames = load_frames(NUM_FRAMES, FRAME_PATH_TEMPLATE)
-    SCREEN_HEIGHT = screen.get_height()
-    SCREEN_WIDTH = screen.get_width()
     global WINDOW_MODE
+    spillway_index = 0
+    spillway_frames = load_frames(NUM_SPILLWAY_FRAMES, SPILLWAY_PATH_TEMPLATE)
+    water_frames = load_frames(NUM_WATER_FRAMES, WATER_PATH_TEMPLATE)
+    flow1_index = 0
+    flow2_index = 0
+    flow3_index = 0
+    flow4_index = 0
+    flow1_frames = load_frames(NUM_FLOW_FRAMES, FLOW_PATH_TEMPLATE)
+    flow2_frames = load_frames(NUM_FLOW_FRAMES, FLOW2_PATH_TEMPLATE)
+    flow3_frames = load_frames(NUM_FLOW_FRAMES, FLOW3_PATH_TEMPLATE)
+    flow4_frames = load_frames(NUM_FLOW_FRAMES, FLOW4_PATH_TEMPLATE)
+    turbine1_index = 0
+    turbine2_index = 0
+    turbine3_index = 0
+    turbine4_index = 0
+    turbine1_frames = load_frames(NUM_TURBINE_FRAMES, TURBINE_PATH_TEMPLATE)
+    turbine2_frames = load_frames(NUM_TURBINE_FRAMES, TURBINE2_PATH_TEMPLATE)
+    turbine3_frames = load_frames(NUM_TURBINE_FRAMES, TURBINE3_PATH_TEMPLATE)
+    turbine4_frames = load_frames(NUM_TURBINE_FRAMES, TURBINE4_PATH_TEMPLATE)
+    bar_frames = load_bar_frames()
+    static_background_image = load_image('assets2/DamSequences/DamStatics/DamStatics.jpg')
+    static_tube_1_image = load_image('assets2/DamSequences/DamStatics/FullTube1.jpg')
+    static_tube_2_image = load_image('assets2/DamSequences/DamStatics/FullTube2.jpg')
+    open_gate_image = load_image('assets2/DamSequences/Gate Cuts/OpenGates.jpg')
+    open_gate2_image = load_image('assets2/DamSequences/Gate Cuts 2/OpenGates2.jpg')
+    open_gate3_image = load_image('assets2/DamSequences/Gate Cuts 3/OpenGates3.jpg')
+    open_gate4_image = load_image('assets2/DamSequences/Gate Cuts 4/OpenGates4.jpg')
+    closed_gate_image = load_image('assets2/DamSequences/Gate Cuts/ClosedGates.jpg')
+    closed_gate2_image = load_image('assets2/DamSequences/Gate Cuts 2/ClosedGates2.jpg')
+    closed_gate3_image = load_image('assets2/DamSequences/Gate Cuts 3/ClosedGates3.jpg')
+    closed_gate4_image = load_image('assets2/DamSequences/Gate Cuts 4/ClosedGates4.jpg')
+    border_frame_image = load_image('assets2/IKM_Assets/BorderFrame.png')
+    control_panel_image = load_image('assets2/IKM_Assets/ControlPanel.png')
+    up_active_image = load_image('assets2/IKM_Assets/UpButtonActive.png')
+    up_inactive_image = load_image('assets2/IKM_Assets/UpButtonInactive.png')
+    down_active_image = load_image('assets2/IKM_Assets/DownButtonActive.png')
+    down_inactive_image = load_image('assets2/IKM_Assets/DownButtonInactive.png')
 
-    # Load the monitor image
-    try:
-        monitor_image_path = resource_path('assets2/monitor.jpg')
-        monitor_image = pygame.image.load(monitor_image_path).convert()
-    except pygame.error as e:
-        print(f"Error loading monitor image: {e}")
-        sys.exit(1)
-
-    try:
-        flow_image_path = resource_path('assets2/flow.png')
-        flow_image = pygame.image.load(flow_image_path).convert()
-    except pygame.error as e:
-        print(f"Error loading monitor image: {e}")
-        sys.exit(1)
+    static_background_image = pygame.transform.scale(static_background_image, (static_background_image.get_size()[0]*SCREEN_WIDTH/1920, static_background_image.get_size()[1]*SCREEN_HEIGHT/1080))
+    static_tube_1_image = pygame.transform.scale(static_tube_1_image, (static_tube_1_image.get_size()[0]*SCREEN_WIDTH/1920, static_tube_1_image.get_size()[1]*SCREEN_HEIGHT/1080))
+    static_tube_2_image = pygame.transform.scale(static_tube_2_image, (static_tube_2_image.get_size()[0]*SCREEN_WIDTH/1920, static_tube_2_image.get_size()[1]*SCREEN_HEIGHT/1080))
+    open_gate_image = pygame.transform.scale(open_gate_image, (open_gate_image.get_size()[0]*SCREEN_WIDTH/1920, open_gate_image.get_size()[1]*SCREEN_HEIGHT/1080))
+    open_gate2_image = pygame.transform.scale(open_gate2_image, (open_gate2_image.get_size()[0]*SCREEN_WIDTH/1920, open_gate2_image.get_size()[1]*SCREEN_HEIGHT/1080))
+    open_gate3_image = pygame.transform.scale(open_gate3_image, (open_gate3_image.get_size()[0]*SCREEN_WIDTH/1920, open_gate3_image.get_size()[1]*SCREEN_HEIGHT/1080))
+    open_gate4_image = pygame.transform.scale(open_gate4_image, (open_gate4_image.get_size()[0]*SCREEN_WIDTH/1920, open_gate4_image.get_size()[1]*SCREEN_HEIGHT/1080))
+    closed_gate_image = pygame.transform.scale(closed_gate_image, (closed_gate_image.get_size()[0]*SCREEN_WIDTH/1920, closed_gate_image.get_size()[1]*SCREEN_HEIGHT/1080))
+    closed_gate2_image = pygame.transform.scale(closed_gate2_image, (closed_gate2_image.get_size()[0]*SCREEN_WIDTH/1920, closed_gate2_image.get_size()[1]*SCREEN_HEIGHT/1080))
+    closed_gate3_image = pygame.transform.scale(closed_gate3_image, (closed_gate3_image.get_size()[0]*SCREEN_WIDTH/1920, closed_gate3_image.get_size()[1]*SCREEN_HEIGHT/1080))
+    closed_gate4_image = pygame.transform.scale(closed_gate4_image, (closed_gate4_image.get_size()[0]*SCREEN_WIDTH/1920, closed_gate4_image.get_size()[1]*SCREEN_HEIGHT/1080))
 
     # Initialize game state
     game_state = reset_game()
     start_screen(game_state)
     clock = pygame.time.Clock()
 
-    # Define button properties
-    button_text = "Click to view REDi Island"
+    # Button positioning
+    button_width = up_active_image.get_width() * SCREEN_WIDTH / 1920
+    button_height = up_active_image.get_height() * SCREEN_HEIGHT / 1080
+    button_x = SCREEN_WIDTH * 0.45
+    up_button_y = SCREEN_HEIGHT * 0.83
+    down_button_y = SCREEN_HEIGHT * 0.93
+
+    up_button_rect = pygame.Rect(button_x, up_button_y, button_width, button_height)
+    down_button_rect = pygame.Rect(button_x, down_button_y, button_width, button_height)
+
+    graph_width = (1200*screen.get_size()[0] / 1920)/2.8
+    graph_height = (900*screen.get_size()[1] / 1080)/2.8
+    graph_x = SCREEN_WIDTH - graph_width - SCREEN_WIDTH * 0.02
+    graph_y = int(SCREEN_HEIGHT * 0.05) 
+    graph_border = pygame.transform.smoothscale(border_frame_image, (int(graph_width*1.025), int(graph_height*1.025)))
+
+    panel_width = (control_panel_image.get_size()[0] * SCREEN_WIDTH / 1920)/2
+    panel_height = (control_panel_image.get_size()[1] * SCREEN_HEIGHT / 1080)/2
+    scaled_panel = pygame.transform.smoothscale(control_panel_image, (panel_width, panel_height))
+    panel_x = 0
+    panel_y = int(SCREEN_HEIGHT * 0.8)
+
+    # Set the font size relative to control panel height
+    panel_font_size = int(panel_height * 0.15)
+    panel_font = pygame.font.Font(None, panel_font_size)
+
+    water_level_text = "Upper Reservoir Water Level"
+
+    # REDi Island link box
+    box_width = int(SCREEN_WIDTH * 0.35)
+    box_height = int(SCREEN_HEIGHT * 0.06)
+    box_x = SCREEN_WIDTH - box_width - int(SCREEN_WIDTH * 0.02)
+    box_y = SCREEN_HEIGHT - box_height - int(SCREEN_HEIGHT * 0.02)
+    clickable_rect = pygame.Rect(box_x, box_y, box_width, box_height)
+    # Button linking to REDi Island
+    
+    scaled_border_redi = pygame.transform.smoothscale(border_frame_image, (box_width, box_height))
+
+    label_surface = panel_font.render("Click here to view REDi Island", True, (255, 255, 255))
+    label_rect = label_surface.get_rect(center=(box_x + box_width / 2, box_y + box_height / 2))
+
+    level_surface = panel_font.render(water_level_text, True, (255, 255, 255))
+
+    square_size = int(panel_height * 0.15)  # Adjust as needed
+    spacing_between_squares = int(square_size * 0.3)
 
     running = True
 
     while running:
-        # Calculate the time since the last frame
-        SCREEN_HEIGHT = screen.get_height()
-        SCREEN_WIDTH = screen.get_width()
-
         for event in pygame.event.get():
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_1:
-                    WINDOW_MODE = 1
-                    change_screen_size(800, 600)
-                elif event.key == pygame.K_2:
-                    WINDOW_MODE = 2
-                    change_screen_size(1024, 768)
-                elif event.key == pygame.K_3:
-                    WINDOW_MODE = 3
-                    change_screen_size(1920, 1080)
             if event.type == pygame.QUIT:
                 running = False
-            elif event.type == pygame.KEYDOWN and not game_state['game_over']:
+            elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_UP:
-                    # Open the next gate
-                    for gate in game_state['gates']:
-                        if gate['target_y'] == gate['initial_y']:
-                            gate['target_y'] = gate['open_y']
+                    for i in range(len(game_state['gates'])):
+                        if game_state['gates'][i] == 0:
+                            game_state['gates'][i] = 1
                             break
                 elif event.key == pygame.K_DOWN:
-                    # Close the last open gate
-                    for gate in reversed(game_state['gates']):
-                        if gate['target_y'] == gate['open_y']:
-                            gate['target_y'] = gate['initial_y']
+                    for i in reversed(range(len(game_state['gates']))):
+                        if game_state['gates'][i] == 1:
+                            game_state['gates'][i] = 0
                             break
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if button_rect.collidepoint(event.pos):
+                if clickable_rect.collidepoint(event.pos):
                     webbrowser.open(WEBPAGE_URL)
+                elif up_button_rect.collidepoint(event.pos):
+                    for i in range(len(game_state['gates'])):
+                        if game_state['gates'][i] == 0:
+                            game_state['gates'][i] = 1
+                            break
+                elif down_button_rect.collidepoint(event.pos):
+                    for i in reversed(range(len(game_state['gates']))):
+                        if game_state['gates'][i] == 1:
+                            game_state['gates'][i] = 0
+                            break
+            elif event.type == pygame.MOUSEWHEEL:
+                if event.y > 0:
+                    for i in range(len(game_state['gates'])):
+                        if game_state['gates'][i] == 0:
+                            game_state['gates'][i] = 1
+                            break
+                elif event.y < 0:
+                    for i in reversed(range(len(game_state['gates']))):
+                        if game_state['gates'][i] == 1:
+                            game_state['gates'][i] = 0
+                            break
 
-        screen.fill((0, 0, 0))
  
         if game_state['level_complete']:
-            # Draw the game environment as usual
-            # Calculate the number of open gates
-            open_gates = sum(gate['target_y'] == gate['open_y'] for gate in game_state['gates'])
-            outer_flow = (open_gates / 3) * game_state['base_outer_flow']
-            game_state['active_outer_flow'] = outer_flow
-
-            # Normalize the water level to a range of 0 to NUM_FRAMES - 1
-            frame_index = int((game_state['water_level'] / MAX_WATER_LEVEL) * (NUM_FRAMES - 1))
-            frame_index = max(0, min(NUM_FRAMES - 1, frame_index))  # Clamp to valid range
-            frames[frame_index] = pygame.transform.scale(frames[frame_index], (SCREEN_WIDTH, SCREEN_HEIGHT))
-            screen.blit(frames[frame_index], (0, 0))
-
-            if game_state['active_outer_flow'] > 0:
-                flow_image = pygame.transform.scale(flow_image, (SCREEN_WIDTH*0.2, SCREEN_HEIGHT*0.05))
-                screen.blit(flow_image, (SCREEN_WIDTH*0.785, SCREEN_HEIGHT*0.765))
-
-            # Draw the gates
-            for gate in game_state['gates']:
-                gate_rect = pygame.Rect(gate['x'] * SCREEN_WIDTH, gate['y'] * SCREEN_HEIGHT, GATE_WIDTH * SCREEN_WIDTH, GATE_HEIGHT * SCREEN_HEIGHT)
-                pygame.draw.rect(screen, (169, 169, 169), gate_rect)
-
-            # Display the monitor image behind the graph
-            monitor_image_scaled = pygame.transform.scale(monitor_image, (int(SCREEN_WIDTH * 0.35), int(SCREEN_HEIGHT * 0.35)))
-            screen.blit(monitor_image_scaled, (SCREEN_WIDTH * 0.62, SCREEN_HEIGHT * 0.18))
-
-            # Display the power generated vs load graph
-            graph_filename = update_graph(game_state['x_start'], game_state['x_end'], game_state['power_data'])
-            graph_image = load_image(graph_filename)
-            if graph_image:
-                scaled_graph_image = pygame.transform.scale(graph_image, (SCREEN_WIDTH * 0.28, SCREEN_HEIGHT * 0.25))
-                screen.blit(scaled_graph_image, (SCREEN_WIDTH * 0.65, SCREEN_HEIGHT * 0.22))
-            os.remove(graph_filename)
-
-            # Draw the dial and pointer
-            draw_dial_and_pointer(screen, power_generated, SCREEN_WIDTH, SCREEN_HEIGHT)
+            screen.blit(static_background_image, (0,0))
 
             # Draw the overlay
             overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -328,11 +353,11 @@ def main():
             # Update elapsed time
             game_state['elapsed_time'] += delta_time
             # Check for level completion
-            if game_state['elapsed_time'] >= LEVEL_DURATION and not game_state['game_over']:
+            if game_state['elapsed_time'] >= LEVEL_DURATION:
                 game_state['level_complete'] = True
             # Calculate the number of open gates
-            open_gates = sum(gate['target_y'] == gate['open_y'] for gate in game_state['gates'])
-            game_state['active_outer_flow'] = (open_gates / 3) * game_state['base_outer_flow']
+            open_gates = sum(game_state['gates'])
+            game_state['active_outer_flow'] = (open_gates / 4) * game_state['base_outer_flow']
             # Update the water level
             if game_state['water_level'] > WATER_LEVEL_THRESHOLD and game_state['water_level'] < MAX_WATER_LEVEL:
                 # Apply outflow only if water level is above the threshold
@@ -355,6 +380,10 @@ def main():
             #assume vol to elevation function by interpolation of set of points
             game_state['water_level'] = np.sqrt(game_state['water_volume'])
 
+            bar_index = int((game_state['water_level']/MAX_WATER_LEVEL)*100)
+            bar_index = min(100,bar_index)
+            bar_image = bar_frames[bar_index]
+
             # Calculate wasted water via spillway
             game_state['wasted_water'] = game_state['wasted_water']+(game_state['spillway_rate']*delta_time)
 
@@ -362,50 +391,91 @@ def main():
             power_generated = 0.5 * (game_state['water_level'] + 3) * game_state['active_outer_flow']
             game_state['power_data'].append(power_generated)
 
-            # Trim power data to match the visible window
+            
+            screen.blit(static_background_image, (0, 0))
+
+            # Draw the static tubes
+            water_index = min(int((game_state['water_level']/MAX_WATER_LEVEL) * (126)), 126)
+            water_level_image = water_frames[water_index]
+            screen.blit(water_level_image, (int(SCREEN_WIDTH*0.0255), 0))
+            if game_state['spillway_rate'] > 0:
+                spillway_index = spillway_index % 24
+                spillway_index += 1
+                spillway_image = spillway_frames[spillway_index]
+                screen.blit(spillway_image, (int(SCREEN_WIDTH*.6172),int(SCREEN_HEIGHT*.1657)))
+            else:
+                spillway_index = 0
+                screen.blit(spillway_frames[spillway_index], (int(SCREEN_WIDTH*.6172),int(SCREEN_HEIGHT*.1657)))
+            screen.blit(static_tube_1_image, (int(SCREEN_WIDTH * 0.4025), int(SCREEN_HEIGHT * 0.3480)))
+            screen.blit(static_tube_2_image, (int(SCREEN_WIDTH * 0.4737), int(SCREEN_HEIGHT * 0.5771)))
+            
+            if game_state['gates'][3] == 0:
+                screen.blit(closed_gate4_image, (int(SCREEN_WIDTH * 0.553), int(SCREEN_HEIGHT * 0.3478)))
+                screen.blit(flow4_frames[36], (int(SCREEN_WIDTH * 0.6881), int(SCREEN_HEIGHT * 0.7714)))
+                screen.blit(turbine4_frames[turbine4_index], (int(SCREEN_WIDTH * 0.645), int(SCREEN_HEIGHT * 0.6223)))
+            else:
+                screen.blit(open_gate4_image, (int(SCREEN_WIDTH * 0.553), int(SCREEN_HEIGHT * 0.3478)))
+                screen.blit(flow4_frames[flow4_index], (int(SCREEN_WIDTH * 0.6881), int(SCREEN_HEIGHT * 0.7714)))
+                flow4_index += 1
+                flow4_index = flow4_index % 35
+                screen.blit(turbine4_frames[turbine4_index], (int(SCREEN_WIDTH * 0.645), int(SCREEN_HEIGHT * 0.6223)))
+                turbine4_index += 1
+                turbine4_index = turbine4_index % 33
+
+            if game_state['gates'][2] == 0:
+                screen.blit(closed_gate3_image, (int(SCREEN_WIDTH * 0.511), int(SCREEN_HEIGHT * 0.3611)))
+                screen.blit(flow3_frames[36], (int(SCREEN_WIDTH * 0.6595), int(SCREEN_HEIGHT * 0.81805)))
+                screen.blit(turbine3_frames[turbine3_index], (int(SCREEN_WIDTH * 0.6051), int(SCREEN_HEIGHT * 0.6486)))
+            else:
+                screen.blit(open_gate3_image, (int(SCREEN_WIDTH * 0.511), int(SCREEN_HEIGHT * 0.3611)))
+                screen.blit(flow3_frames[flow3_index], (int(SCREEN_WIDTH * 0.6595), int(SCREEN_HEIGHT * 0.81805)))
+                flow3_index += 1
+                flow3_index = flow3_index % 35
+                screen.blit(turbine3_frames[turbine3_index], (int(SCREEN_WIDTH * 0.6051), int(SCREEN_HEIGHT * 0.6486)))
+                turbine3_index += 1
+                turbine3_index = turbine3_index % 33
+
+            if game_state['gates'][1] == 0:
+                screen.blit(closed_gate2_image, (int(SCREEN_WIDTH * 0.4744), int(SCREEN_HEIGHT * 0.3767)))
+                screen.blit(flow2_frames[36], (int(SCREEN_WIDTH * 0.6131), int(SCREEN_HEIGHT * 0.8406)))
+                screen.blit(turbine2_frames[turbine2_index], (int(SCREEN_WIDTH * 0.564), int(SCREEN_HEIGHT * 0.6714)))
+            else:
+                screen.blit(open_gate2_image, (int(SCREEN_WIDTH * 0.4744), int(SCREEN_HEIGHT * 0.3767)))
+                screen.blit(flow2_frames[flow2_index], (int(SCREEN_WIDTH * 0.6131), int(SCREEN_HEIGHT * 0.8406)))
+                flow2_index += 1
+                flow2_index = flow2_index % 35
+                screen.blit(turbine2_frames[turbine2_index], (int(SCREEN_WIDTH * 0.564), int(SCREEN_HEIGHT * 0.6714)))
+                turbine2_index += 1
+                turbine2_index = turbine2_index % 33
+
+            if game_state['gates'][0] == 0:
+                screen.blit(closed_gate_image, (int(SCREEN_WIDTH * 0.4340), int(SCREEN_HEIGHT * 0.3914)))
+                screen.blit(flow1_frames[36], (int(SCREEN_WIDTH * 0.5767), int(SCREEN_HEIGHT * 0.8764)))
+                screen.blit(turbine1_frames[turbine1_index], (int(SCREEN_WIDTH * 0.5247), int(SCREEN_HEIGHT * 0.7006)))
+            else:
+                screen.blit(open_gate_image, (int(SCREEN_WIDTH * 0.4340), int(SCREEN_HEIGHT * 0.3914)))
+                screen.blit(flow1_frames[flow1_index], (int(SCREEN_WIDTH * 0.5767), int(SCREEN_HEIGHT * 0.8764)))
+                flow1_index += 1
+                flow1_index = flow1_index % 35
+                screen.blit(turbine1_frames[turbine1_index], (int(SCREEN_WIDTH * 0.5247), int(SCREEN_HEIGHT * 0.7006)))
+                turbine1_index += 1
+                turbine1_index = turbine1_index % 33
+
+            # Update the graph with new x range and power data
+            graph_filename = update_graph(game_state['x_start'], game_state['x_end'], game_state['power_data'])
+            graph_image = load_image(graph_filename)
+
+            scaled_graph_image = pygame.transform.scale(graph_image, (graph_width, graph_height))
+            screen.blit(graph_border, (graph_x, graph_y))
+            screen.blit(scaled_graph_image, (graph_x, graph_y))
+
+             # Trim power data to match the visible window
             if len(game_state['power_data']) > 10:
                 game_state['power_data'] = game_state['power_data'][-10:]
 
             # Update the x range to simulate movement
             game_state['x_start'] += 0.05
             game_state['x_end'] += 0.05
-
-            # Update the graph with new x range and power data
-            graph_filename = update_graph(game_state['x_start'], game_state['x_end'], game_state['power_data'])
-
-            # Load and display the graph
-            graph_image = load_image(graph_filename)
-
-            # Update gate positions
-            for gate in game_state['gates']:
-                if gate['y'] < gate['target_y']:
-                    gate['y'] += GATE_MOVE_DISTANCE  # Move gate down
-                elif gate['y'] > gate['target_y']:
-                    gate['y'] -= GATE_MOVE_DISTANCE  # Move gate up
-
-            # Normalize the water level to a range of 0 to NUM_FRAMES - 1
-            frame_index = int((game_state['water_level'] / MAX_WATER_LEVEL) * (NUM_FRAMES - 1))
-            frame_index = max(0, min(NUM_FRAMES - 1, frame_index))  # Clamp to valid range
-            frames[frame_index] = pygame.transform.scale(frames[frame_index], (SCREEN_WIDTH, SCREEN_HEIGHT))
-            screen.blit(frames[frame_index], (0, 0))
-
-            if game_state['active_outer_flow'] > 0:
-                flow_image = pygame.transform.scale(flow_image, (SCREEN_WIDTH*0.2,SCREEN_HEIGHT*0.05))
-                screen.blit(flow_image, (SCREEN_WIDTH*0.785,SCREEN_HEIGHT*0.765))
-
-            # Draw the gates
-            for gate in game_state['gates']:
-                gate_rect = pygame.Rect(gate['x'] * SCREEN_WIDTH, gate['y'] * SCREEN_HEIGHT, GATE_WIDTH * SCREEN_WIDTH, GATE_HEIGHT * SCREEN_HEIGHT)
-                pygame.draw.rect(screen, (169, 169, 169), gate_rect)
-
-            # Display the monitor image behind the graph
-            monitor_image_scaled = pygame.transform.scale(monitor_image, (int(SCREEN_WIDTH * 0.35), int(SCREEN_HEIGHT * 0.35)))
-            screen.blit(monitor_image_scaled, (SCREEN_WIDTH * 0.62, SCREEN_HEIGHT * 0.18))
-
-            # Display of the power generated vs load graph
-            if graph_image:
-                scaled_graph_image = pygame.transform.scale(graph_image, (SCREEN_WIDTH * 0.28, SCREEN_HEIGHT * 0.25))
-                screen.blit(scaled_graph_image, (SCREEN_WIDTH * 0.65, SCREEN_HEIGHT * 0.22))
 
             # Set the font size based on the window mode
             if WINDOW_MODE == 1:
@@ -415,44 +485,29 @@ def main():
             elif WINDOW_MODE == 3:
                 performance_font = pygame.font.Font(None, 48)
 
-            # Display the outer flow status
-            flow_status = f"Outer Flow: {game_state['active_outer_flow']:.2f}"
-            label = performance_font.render(flow_status, True, (0, 0, 0))
-            screen.blit(label, (SCREEN_WIDTH - label.get_width() - SCREEN_WIDTH*0.0125, SCREEN_HEIGHT*0.0167))
-
-            # Display the number of open gates
-            open_gates_status = f"Open Gates: {open_gates}"
-            open_gates_label = performance_font.render(open_gates_status, True, (0, 0, 0))
-            screen.blit(open_gates_label, (SCREEN_WIDTH - open_gates_label.get_width() - SCREEN_WIDTH*0.0125, SCREEN_HEIGHT*0.0567))
-
-            # Display the power generated
-            power_status = f"Power Generated: {power_generated:.2f} MW"
-            power_label = performance_font.render(power_status, True, (0, 0, 0))
-            screen.blit(power_label, (SCREEN_WIDTH - power_label.get_width() - SCREEN_WIDTH*0.0125, SCREEN_HEIGHT*0.0967))
-
             # Display the water wasted
 
             waste_status = f"Average Water Wasted: {(game_state['wasted_water']/game_state['elapsed_time']):.2f} cfs"
-            waste_label = performance_font.render(waste_status, True, (0, 0, 0))
-            screen.blit(waste_label, (SCREEN_WIDTH - waste_label.get_width() - SCREEN_WIDTH*0.0125, SCREEN_HEIGHT*0.1267))
+            waste_label = performance_font.render(waste_status, True, (255, 255, 255))
+            screen.blit(waste_label, (SCREEN_WIDTH - waste_label.get_width() - SCREEN_WIDTH*0.0125, SCREEN_HEIGHT*0.0167))
 
             # Display elapsed time
             time_status = f"Time Elapsed: {int(game_state['elapsed_time'])} sec"
             time_max = f"Total Duration: {LEVEL_DURATION} sec"
-            time_label = performance_font.render(time_status, True, (0, 0, 0))
-            max_label = performance_font.render(time_max, True, (0, 0, 0))
+            time_label = performance_font.render(time_status, True, (255, 255, 255))
+            max_label = performance_font.render(time_max, True, (255, 255, 255))
             screen.blit(time_label, (SCREEN_WIDTH*0.0125, SCREEN_HEIGHT*0.0167))
             screen.blit(max_label, (SCREEN_WIDTH*0.0125, SCREEN_HEIGHT*0.0567))
 
             # Calculate the sine curve value at x_start + 0.5
-            sine_value = 2*np.sin(game_state['x_start'] + 0.5) + 6
+            cos_value = -4*np.cos(game_state['x_start'] + 0.5) + 4.5
 
             # Calculate the load difference
-            load_difference = truncate_float(power_generated - sine_value, 2)
+            load_difference = truncate_float(power_generated - cos_value, 2)
 
             # Render the load difference text
             performance_text = f"Load Difference: {load_difference} MW"
-            performance_label = performance_font.render(performance_text, True, (0, 0, 0))
+            performance_label = performance_font.render(performance_text, True, (255, 255, 255))
 
             # Calculate the position to center the text at the top of the screen
             performance_x = (SCREEN_WIDTH - performance_label.get_width()) // 2
@@ -466,8 +521,8 @@ def main():
             game_state['score'] += abs_load_difference
 
             # Render the score text
-            score_text = f"Average Power Imbalance: {int(game_state['score']/game_state['elapsed_time'])} MW"
-            score_label = performance_font.render(score_text, True, (0, 0, 0))
+            score_text = f"Average Power Imbalance: {int(game_state['score']/max(game_state['elapsed_time'],1))} MW"
+            score_label = performance_font.render(score_text, True, (255, 255, 255))
 
             # Calculate the position to display the score
             score_x = (SCREEN_WIDTH - score_label.get_width()) // 2
@@ -475,21 +530,62 @@ def main():
 
             # Blit the score label to the screen
             screen.blit(score_label, (score_x, score_y))
+            
+            # Draw the control panel
+            screen.blit(scaled_panel, (panel_x, panel_y))
 
-            # Button linking to REDi Island
-            button_rect = pygame.Rect(SCREEN_WIDTH * 0.65, SCREEN_HEIGHT * 0.9, SCREEN_WIDTH * 0.32, SCREEN_HEIGHT * 0.05)
-            if WINDOW_MODE == 1:
-                button_font = pygame.font.SysFont(None, 30)
-            elif WINDOW_MODE == 2:
-                button_font = pygame.font.SysFont(None, 36)
-            elif WINDOW_MODE == 3:
-                button_font = pygame.font.SysFont(None, 40)
-            button_label = button_font.render(button_text, True, (255, 255, 255))
-            pygame.draw.rect(screen, (0, 0, 0), button_rect)
-            screen.blit(button_label, button_rect)
+            # Prepare the lines
+            outer_flow_text = f"Outer Flow: {game_state['active_outer_flow']:.2f} cfs"
+            power_text = f"Power Generated: {power_generated:.2f} MW/s"  # Swapped order
+            open_gates_text = f"Open Gates: {open_gates}"
 
-            # Draw the dial and pointer
-            draw_dial_and_pointer(screen, power_generated,SCREEN_WIDTH,SCREEN_HEIGHT)
+            left_panel_lines = [outer_flow_text, power_text, open_gates_text]
+
+            # Layout calculations
+            left_spacing = (panel_height / (len(left_panel_lines) + 1)) / 1.75
+
+            # Draw left column of text
+            for i, line in enumerate(left_panel_lines):
+                text_surface = panel_font.render(line, True, (255, 255, 255))
+                text_x = panel_x + panel_width * 0.05  # Left margin
+                text_y = panel_y + left_spacing * (i + 1) + SCREEN_HEIGHT*0.01
+                screen.blit(text_surface, (text_x, text_y))
+
+            screen.blit(level_surface, (SCREEN_WIDTH * 0.235, SCREEN_HEIGHT * 0.82))
+
+            # Compute starting position
+            start_x = panel_x + panel_width * 0.05
+            start_y = panel_y + left_spacing * (len(left_panel_lines) + 1)
+
+            for i in range(4):
+                gate_open = game_state['gates'][i] == 1
+                alpha = 255 if gate_open else 64  # Full opacity if open, transparent if closed
+
+                # Create a surface with per-pixel alpha
+                gate_surface = pygame.Surface((square_size, square_size), pygame.SRCALPHA)
+                gate_surface.fill((0, 206, 244, alpha))  # Blue with variable transparency
+
+                x = start_x + i * (square_size + spacing_between_squares)
+                screen.blit(gate_surface, (x, start_y))
+
+            screen.blit(bar_image, (int(SCREEN_WIDTH * 0.315), int(SCREEN_HEIGHT * 0.83)))
+
+            # Decide whether buttons should be active
+            all_open = all(g == 1 for g in game_state['gates'])
+            all_closed = all(g == 0 for g in game_state['gates'])
+
+            up_image = up_inactive_image if all_open else up_active_image
+            down_image = down_inactive_image if all_closed else down_active_image
+
+            # Scale and draw buttons
+            up_scaled = pygame.transform.scale(up_image, (int(button_width), int(button_height)))
+            down_scaled = pygame.transform.scale(down_image, (int(button_width), int(button_height)))
+
+            screen.blit(up_scaled, up_button_rect.topleft)
+            screen.blit(down_scaled, down_button_rect.topleft)
+
+            screen.blit(scaled_border_redi, (box_x, box_y))
+            screen.blit(label_surface, label_rect)
 
             # Clean up the temporary file
             os.remove(graph_filename)
