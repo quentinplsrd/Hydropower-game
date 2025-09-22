@@ -1,0 +1,15 @@
+name: hydro\_game
+channels:
+
+* conda-forge
+* defaults
+  dependencies:
+* python=3.11
+* pygame
+* opencv
+* numpy
+* matplotlib
+* pip
+* pip:
+
+  * ortools
