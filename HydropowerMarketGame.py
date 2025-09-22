@@ -6,12 +6,12 @@ import cv2
 import numpy as np
 import random
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import tempfile
 plt.rcParams["axes3d.mouserotationstyle"] = 'azel'
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from ortools.math_opt.python import mathopt
 import time
-import textwrap
 import json
 
 #Colors
@@ -20,6 +20,8 @@ WHITE = (255, 255, 255)
 GREEN = (0, 200, 0)
 
 pygame.init()
+
+SAVE_FILE = 'save_game.json'
 
 #Model Variables
 fig_3d, ax_3d, canvas_3d, scatter = None, None, None, None
@@ -58,15 +60,16 @@ level_names = [
         "Level 4 - Management: Environmental Safety Operations",
         "Level 5 - Management: Working With the Power Grid"
     ]
-level_completed = [True] * len(level_names)
+level_completed = [False] * len(level_names)
+unlocked_levels = [False] * len(level_names)
+level_scores = [0] * len(level_names)
 
 #RoR Variables
 NUM_ROR_FRAMES = 62
 WATER_LOWER_PATH_TEMPLATE = 'assets/RoRWaterFrames/RoRLoopFrame_{}.jpg'
 TUBE_PATH_TEMPLATE = 'assets/RoRTubeFrames/RoRLoopFrame_{}.jpg'
-ROR_LEVEL_DURATION = 300
-MAX_ROTATION = 80
-MAX_RELEASE = 100
+ROR_LEVEL_DURATION = 60
+MAX_ROTATION = 90
 ROTATION_ANGLE = 5
 NUM_OVALS = 16
 
@@ -85,9 +88,9 @@ NUM_WATER_FRAMES = 127
 WATER_PATH_TEMPLATE = 'assets/DamSequences/WaterLevels/WaterLevel_{}.jpg'
 NUM_SPILLWAY_FRAMES = 25
 SPILLWAY_PATH_TEMPLATE = 'assets/DamSequences/Spillway Cuts/Spillway_frame_{}.jpg'
-MAX_WATER_LEVEL = 4  # Maximum water level for game over
+MAX_WATER_LEVEL = 5.656
 WATER_LEVEL_THRESHOLD = 0.01 * MAX_WATER_LEVEL  # 1% of the max water level
-LEVEL_DURATION = 300 # Duration of the level in seconds
+DAM_LEVEL_DURATION = 120 # Duration of the level in seconds
 BAR_IMAGE_PATH_TEMPLATE = 'assets/IKM_Assets/AnimatedBarSequence/Bar_{}.png'
 BAR_IMAGE_COUNT = 101 # Bar_0 to Bar_100
 
@@ -223,6 +226,7 @@ POWERHOUSE_PATH_TEMPLATE = 'assets/PSHSequences/PSHTurbineCut/Turbine_frame_{}.j
 MAX_PSH_RELEASE = 150
 MIN_PSH_RELEASE = -150
 RELEASE_STEP = 10
+PSH_LEVEL_DURATION = 120
 
 UPPER_RESERVOIR_PATH_TEMPLATE = 'assets/PSHSequences/PSHUpperReservoirFramesCut/UpperReservoir_frame_{}.jpg'
 
@@ -295,12 +299,12 @@ PSH_LOAD = np.array([ 4.00000000e+02,  3.98629950e+02,  3.97103074e+02,  3.95425
 # Global simulation parameters and OR-Tools model setup.
 N_timesteps = 24
 hours = np.arange(N_timesteps)
-TARGET = 16  # Daily release value
-min_release = 0.2
-max_ramp_up = 0.2
-max_ramp_down = 0.3
-target_tol = 0.1
-price_values = 0.02 * np.array(
+TARGET = 32000  # Daily release value
+min_release = 400
+max_ramp_up = 400
+max_ramp_down = 600
+target_tol = 200
+price_values = 40 * np.array(
     [20, 18, 17, 16, 18, 25, 30, 35, 32, 30, 28, 27,
      28, 30, 32, 35, 40, 45, 42, 38, 35, 30, 25, 22]
 )
@@ -323,6 +327,32 @@ if result.termination.reason == mathopt.TerminationReason.OPTIMAL:
 clock = pygame.time.Clock()
 
 # --- Utility functions ---
+def save_game_data():
+    global player_name, selected_character, unlocked_levels, level_completed, level_scores
+    data = {
+        'player_name': player_name,
+        'selected_character': selected_character,
+        'unlocked_levels': unlocked_levels,
+        'level_completed': level_completed,
+        'level_scores': level_scores
+    }
+    with open(SAVE_FILE, 'w') as file:
+        json.dump(data, file)
+
+def load_game_data():
+    global player_name, selected_character, unlocked_levels, level_completed, level_scores
+    if os.path.exists(SAVE_FILE):
+        with open(SAVE_FILE, 'r') as file:
+            data = json.load(file)
+            player_name = data.get('player_name', player_name)
+            selected_character = data.get('selected_character', selected_character)
+            unlocked_levels = data.get('unlocked_levels', unlocked_levels)
+            level_completed = data.get('level_completed', level_completed)
+            level_scores = data.get('level_scores', level_scores)
+            return True
+    else:
+        return False
+
 def resource_path(relative_path):
     try:
         base_path = sys._MEIPASS
@@ -442,6 +472,7 @@ def run_dialogue(scenes):
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                save_game_data()
                 pygame.quit()
                 sys.exit()
             elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -510,11 +541,41 @@ def run_dialogue(scenes):
 
             pygame.display.flip()
 
+def calculate_score(imbalance,water_waste=0,factor=55):
+    return int(10000/((imbalance/factor) + (water_waste/20)))
+
+def Example_Graph(x_start=0, x_end=5, power_data=[], display=0,mode=0):
+    global LOAD_CURVE
+    x = np.linspace(x_start, x_end, 100)
+    power_x = np.linspace(x_start, x_start + 0.5, len(power_data))
+    plt.figure(figsize=(4, 3), facecolor=(0, 0, 0, 0))
+    ax = plt.gca()
+    ax.set_facecolor((0, 0, 0, 0))
+    plt.plot(power_x, power_data, label='Power Generated', color='red')
+    indices = (np.arange(display, display + 100) % len(LOAD_CURVE))
+    plt.plot(x, LOAD_CURVE[indices]/30, label='Load Curve', color='white')
+    plt.xlim(x_start, x_end)
+    plt.ylim(1, 20)
+    plt.axis('off')
+
+    if mode == 0:
+        legend = plt.legend(loc='upper right', facecolor='none', edgecolor='none', fontsize=14)
+    elif mode == 2:
+        legend = plt.legend(loc='lower left', facecolor='none', edgecolor='none', fontsize=14)
+    for text in legend.get_texts():
+        text.set_color('white')
+
+    plt.tight_layout()
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+    plt.savefig(temp_file.name, dpi=400, transparent=True)
+    plt.close()
+    return temp_file.name
+
 # --- Character Select Functions ---
 def new_game():
     global selected_character,hovered_index,current_preview_index,ignore_mouse_hover_until_move,block_hover_if_random
     global random_selection_active,random_selection_start_time,random_highlight_index,last_interval_step
-    global confirm_clicked,name_input_active,player_name, level_completed
+    global confirm_clicked,name_input_active,player_name,level_completed, unlocked_levels
     global cyc_font_size, cyc_font, cyc_label, cyc_title_font, cyc_title_text, cyc_confirm_font, cyc_confirm_text
     #Resets Things
     selected_character = 4
@@ -537,6 +598,7 @@ def new_game():
     cyc_confirm_font = pygame.font.SysFont("Arial", int(SCREEN_HEIGHT * 0.025), bold=True)
     cyc_confirm_text = cyc_confirm_font.render("Confirm", True, WHITE)
     level_completed = [False] * len(level_names)
+    unlocked_levels = [True] + [False] * (len(level_names) - 1)
 
 def trigger_random_selection():
     global random_selection_active, random_selection_start_time, last_interval_step
@@ -685,22 +747,29 @@ def draw_3d_surface(Q_val, h_val, azim, elev):
     global fig_3d, ax_3d, canvas_3d, scatter
     if fig_3d:
         plt.close(fig_3d)
-    fig_3d = plt.figure(figsize=(5, 4), dpi=100)
+
+    if SCREEN_WIDTH == 960:
+        fig_3d = plt.figure(figsize=(4, 3), dpi=100)
+    elif SCREEN_WIDTH == 1280:
+        fig_3d = plt.figure(figsize=(5, 4), dpi=100)
+    elif SCREEN_WIDTH == 1600:
+        fig_3d = plt.figure(figsize=(6, 5), dpi=100)
     ax_3d = fig_3d.add_subplot(111, projection='3d',computed_zorder=False)
     fig_3d.subplots_adjust(left=0.15, right=0.85, bottom=0.2)
-    Q = np.linspace(0, 100, 50)
+    Q = np.linspace(0, 10000, 50)
     h = np.linspace(0, 100, 50)
     Q_grid, h_grid = np.meshgrid(Q, h)
-    P_grid = (Q_grid * g * h_grid)/1000
+    P_grid = 0.00007 * Q_grid * h_grid
     ax_3d.plot_surface(Q_grid, h_grid, P_grid, cmap='Blues', alpha=0.9)
-    P_val = (Q_val * g * h_val)/1000
+    P_val = 0.00007 * Q_val * h_val
     scatter = ax_3d.scatter(Q_val, h_val, P_val, color='red', s=50,depthshade=False)
     ax_3d.set_xlabel("Flow Rate Q (cfs)", labelpad=10)
+    ax_3d.xaxis.set_major_formatter(mticker.StrMethodFormatter('{x:,.0f}'))
     ax_3d.set_ylabel("Head h (ft)", labelpad=10)
-    ax_3d.set_zlabel("Power P (kW)", labelpad=10)
-    ax_3d.set_xlim(0, 100)
+    ax_3d.set_zlabel("Power P (MW)", labelpad=10)
+    ax_3d.set_xlim(0, 10000)
     ax_3d.set_ylim(0, 100)
-    ax_3d.set_zlim(0, 100)
+    ax_3d.set_zlim(0, 72)
     ax_3d.view_init(elev=elev, azim=azim)
     canvas_3d = FigureCanvasAgg(fig_3d)
     canvas_3d.draw()
@@ -711,7 +780,7 @@ def draw_3d_surface(Q_val, h_val, azim, elev):
 def update_3d_surface(Q_val, h_val, azim, elev):
     global scatter, canvas_3d, ax_3d, fig_3d
     scatter.remove()
-    P_val = (Q_val * g * h_val)/1000
+    P_val = 0.00007 * Q_val * h_val
     scatter = ax_3d.scatter(Q_val, h_val, P_val, color='red', s=50,depthshade=False)
     ax_3d.view_init(elev=elev, azim=azim)
     canvas_3d.draw()
@@ -723,18 +792,27 @@ def draw_colormap(Q_val, h_val):
     global fig_colormap, ax_colormap, canvas_colormap, red_dot
     if fig_colormap:
         plt.close(fig_colormap)
-    fig_colormap, ax_colormap = plt.subplots(figsize=(4, 3), dpi=100)
-    Q = np.linspace(0, 100, 200)
+
+    if SCREEN_WIDTH == 960:
+        fig_colormap, ax_colormap = plt.subplots(figsize=(4, 3), dpi=100)
+    elif SCREEN_WIDTH == 1280:
+        fig_colormap, ax_colormap = plt.subplots(figsize=(5, 4), dpi=100)
+    elif SCREEN_WIDTH == 1600:
+        fig_colormap, ax_colormap = plt.subplots(figsize=(6, 5), dpi=100)
+    Q = np.linspace(0, 10000, 200)
     h = np.linspace(0, 100, 200)
     Q_grid, h_grid = np.meshgrid(Q, h)
-    P_grid = (Q_grid * g * h_grid)/1000
+    P_grid = 0.00007 * Q_grid * h_grid
     cmap = plt.get_cmap('viridis')
     c = ax_colormap.pcolormesh(Q_grid, h_grid, P_grid, shading='auto', cmap=cmap)
     fig_colormap.colorbar(c, ax=ax_colormap, label="Power (kW)")
     red_dot = ax_colormap.plot(Q_val, h_val, 'ro')[0]
     ax_colormap.set_xlabel("Flow Rate Q (cfs)")
+    ax_colormap.xaxis.set_major_formatter(mticker.StrMethodFormatter('{x:,.0f}'))
     ax_colormap.set_ylabel("Head h (ft)")
     fig_colormap.tight_layout()
+    fig_colormap.patch.set_alpha(0)         # transparent figure background
+    ax_colormap.set_facecolor((0,0,0,0))    # transparent axes background
     canvas_colormap = FigureCanvasAgg(fig_colormap)
     canvas_colormap.draw()
     raw_data = canvas_colormap.get_renderer().buffer_rgba()
@@ -750,9 +828,143 @@ def update_colormap(Q_val, h_val):
     return pygame.image.frombuffer(raw_data, size, "RGBA")
 
 # --- RoR Level Functions ---
+def draw_arrow_keys(screen, center_x, center_y, pressed_key=None):
+    global SCREEN_WIDTH, SCREEN_HEIGHT
+
+    # Colors
+    base_color = (0, 206, 244)
+    pressed_alpha = 255
+    unpressed_alpha = 64
+    triangle_color = (0, 0, 0)
+
+    # Sizes relative to screen
+    key_size = int(SCREEN_HEIGHT * 0.11)  # Key size ~11% of screen height
+    spacing = int(SCREEN_HEIGHT * 0.02)   # Spacing ~2% of screen height
+    offset = int(key_size * 0.4)          # Triangle offset relative to key size
+
+    vertical_spacing = key_size + spacing
+    horizontal_spacing = key_size + spacing
+
+    # Key positions
+    keys = {
+        'up': pygame.Rect(center_x - key_size // 2, center_y - vertical_spacing, key_size, key_size),
+        'left': pygame.Rect(center_x - 1.42 * horizontal_spacing, center_y, key_size, key_size),
+        'down': pygame.Rect(center_x - key_size // 2, center_y, key_size, key_size),
+        'right': pygame.Rect(center_x + 1.42 * horizontal_spacing - key_size, center_y, key_size, key_size),
+    }
+
+    # Draw keys
+    for key, rect in keys.items():
+        alpha = pressed_alpha if key == pressed_key else unpressed_alpha
+        color_with_alpha = (*base_color, alpha)
+        surface = pygame.Surface((key_size, key_size), pygame.SRCALPHA)
+        surface.fill(color_with_alpha)
+        screen.blit(surface, rect.topleft)
+
+        # Draw arrow triangles
+        triangle_points = {
+            'up': [(rect.centerx, rect.top + offset), (rect.left + offset, rect.bottom - offset), (rect.right - offset, rect.bottom - offset)],
+            'down': [(rect.centerx, rect.bottom - offset), (rect.left + offset, rect.top + offset), (rect.right - offset, rect.top + offset)],
+            'left': [(rect.left + offset, rect.centery), (rect.right - offset, rect.top + offset), (rect.right - offset, rect.bottom - offset)],
+            'right': [(rect.right - offset, rect.centery), (rect.left + offset, rect.top + offset), (rect.left + offset, rect.bottom - offset)],
+        }
+        pygame.draw.polygon(screen, triangle_color, triangle_points[key])
+
+def draw_controls_page_ROR(screen, show_pressed_keys, show_blinking_rect):
+    # Colors
+    text_color = (255, 255, 255)
+
+    # Fonts relative to height
+    pygame.font.init()
+    title_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.09))
+    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.045))
+
+    # Background
+    background = load_image("assets/RoRStatics/RoRStatic.jpg")
+    background = pygame.transform.scale(background, (SCREEN_WIDTH, SCREEN_HEIGHT))
+    screen.blit(background, (0, 0))
+
+    gate_image = load_image('assets/RoRStatics/Wicket_gate.png')
+    border_frame = load_image('assets/IKM_Assets/BorderFrame.png')
+
+    # Frame and gate scaling
+    NUM_OVALS = 16
+    angles = [220 - i * 360 / NUM_OVALS for i in range(NUM_OVALS)]
+    active_circle_radius = SCREEN_WIDTH * 0.12
+
+    frame_size = int(active_circle_radius * 2.7)
+    frame_x = int(SCREEN_WIDTH * 0.55)
+    frame_y = int(SCREEN_HEIGHT * 0.2)
+
+    scaled_frame = pygame.transform.smoothscale(border_frame, (frame_size, frame_size))
+
+    gate_scale_factor = 0.18
+    gate_size = int(frame_size * gate_scale_factor)
+    active_gate_image = pygame.transform.smoothscale(gate_image, (gate_size, gate_size))
+
+    center_x, center_y = frame_x + frame_size / 2, frame_y + frame_size / 2
+    positions = [
+        (center_x + active_circle_radius * np.cos(2 * np.pi * i / NUM_OVALS),
+         center_y + active_circle_radius * np.sin(2 * np.pi * i / NUM_OVALS))
+        for i in range(NUM_OVALS)
+    ]
+    gate_caption = caption_font.render("Wicket Gate Display", True, text_color)
+    screen.blit(gate_caption, (frame_x + frame_size / 2 - gate_caption.get_width() / 2, frame_y - SCREEN_HEIGHT * 0.055))
+
+    # Title
+    title_text = title_font.render("Controls", True, text_color)
+    title_rect = title_text.get_rect(center=(SCREEN_WIDTH // 4, int(SCREEN_HEIGHT * 0.07)))
+    screen.blit(title_text, title_rect)
+
+    # Arrow keys
+    draw_arrow_keys(screen, SCREEN_WIDTH // 4, int(SCREEN_HEIGHT * 0.28), 'up' if show_pressed_keys else 'down')
+
+    # Keyboard caption
+    up_caption = caption_font.render("Press up/down to open/close the wicket gate.", True, text_color)
+    up_caption_rect = up_caption.get_rect(center=(SCREEN_WIDTH // 4, int(SCREEN_HEIGHT * 0.42)))
+    screen.blit(up_caption, up_caption_rect)
+
+    # Mouse image
+    mouse_image_original = load_image("assets/RoRStatics/mouse.png")
+    original_size = mouse_image_original.get_size()
+    scale_factor = SCREEN_HEIGHT * 0.00055
+    new_size = (int(original_size[0] * scale_factor), int(original_size[1] * scale_factor))
+    mouse_image = pygame.transform.smoothscale(mouse_image_original, new_size)
+    mouse_rect = mouse_image.get_rect(center=(SCREEN_WIDTH // 4, int(SCREEN_HEIGHT * 0.72)))
+
+    scroll_up_image = load_image("assets/RoRStatics/Scroll_Up.png")
+    scroll_down_image = load_image("assets/RoRStatics/Scroll_Down.png")
+    rect_width = int(SCREEN_WIDTH * 0.01)
+    rect_height = int(SCREEN_HEIGHT * 0.054)
+    rect_x = int(SCREEN_WIDTH * 0.246)
+    rect_y = int(SCREEN_HEIGHT * 0.63)
+   
+    if show_blinking_rect: #Show Up
+        scroll_up_image = pygame.transform.smoothscale(scroll_up_image, (rect_width, rect_height))
+        screen.blit(scroll_up_image, (rect_x, rect_y))
+    else: #Show Down
+        scroll_down_image = pygame.transform.smoothscale(scroll_down_image, (rect_width, rect_height))
+        screen.blit(scroll_down_image, (rect_x, rect_y))
+        angles = [angle + 50 for angle in angles]
+
+    screen.blit(mouse_image, mouse_rect)
+
+    # Mouse caption
+    mouse_caption = caption_font.render("Scroll up/down to open/close the wicket gate.", True, text_color)
+    mouse_caption_rect = mouse_caption.get_rect(center=(SCREEN_WIDTH // 4, int(SCREEN_HEIGHT * 0.92)))
+    screen.blit(mouse_caption, mouse_caption_rect)
+
+    screen.blit(scaled_frame, (frame_x, frame_y))
+
+    # Draw rotating gates
+    for i, (pos_x, pos_y) in enumerate(positions):
+        rotated_image = pygame.transform.rotozoom(active_gate_image, angles[i], 1.0)
+        rect = rotated_image.get_rect(center=(pos_x, pos_y))
+        screen.blit(rotated_image, rect.topleft)
+
 def reset_RoR():
     return {
-        'rotation': 0,
+        'rotation': 90,
         'release': 0.0,
         'power_data': [],
         'x_start': 0,
@@ -761,10 +973,12 @@ def reset_RoR():
         'angles': [],
         'center_x': 0,
         'center_y': 0,
+        'score': 0.0,
+        'elapsed_time': 0.0,
         'positions': []
     }
 
-def update_RoR_graph(x_start, x_end, power_data, display):
+def update_RoR_graph(x_start=0, x_end=5, power_data=[], display=0,mode=0):
     global LOAD_CURVE
     x = np.linspace(x_start, x_end, 100)
     power_x = np.linspace(x_start, x_start + 0.5, len(power_data))
@@ -773,12 +987,15 @@ def update_RoR_graph(x_start, x_end, power_data, display):
     ax.set_facecolor((0, 0, 0, 0))
     plt.plot(power_x, power_data, label='Power Generated', color='red')
     indices = (np.arange(display, display + 100) % len(LOAD_CURVE))
-    plt.plot(x, LOAD_CURVE[indices]/30, label='Load Curve', color='white')
+    plt.plot(x, LOAD_CURVE[indices]/110, label='Load Curve', color='white')
     plt.xlim(x_start, x_end)
-    plt.ylim(1, 20)
+    plt.ylim(0, 6)
     plt.axis('off')
 
-    legend = plt.legend(loc='upper right', facecolor='none', edgecolor='none', fontsize=14)
+    if mode == 0:
+        legend = plt.legend(loc='upper right', facecolor='none', edgecolor='none', fontsize=14)
+    elif mode == 2:
+        legend = plt.legend(loc='lower left', facecolor='none', edgecolor='none', fontsize=14)
     for text in legend.get_texts():
         text.set_color('white')
 
@@ -788,7 +1005,78 @@ def update_RoR_graph(x_start, x_end, power_data, display):
     plt.close()
     return temp_file.name
 
+def path_points(center, R, theta0, beta_deg, n=20, k=-0.1):
+    cx, cy = center
+    beta = np.radians(beta_deg)
+    # Guard against beta ~ 0°
+    cot_beta = 1.0 / np.tan(beta) if beta_deg > 0.1 else 1e6
+    pts = []
+    for i in range(n+1):
+        t = i / n  # 0..1
+        r = R * t
+        theta = theta0 - k * (1 - t) * cot_beta
+        x = cx + r * np.cos(theta*np.pi/180)
+        y = cy + r * np.sin(theta*np.pi/180)
+        pts.append((x, y))
+    return pts
+
 # --- Dam Level Functions ---
+def draw_controls_page_dam(screen, show_pressed_keys, show_blinking_rect):
+    # Colors
+    text_color = (255, 255, 255)
+
+    # Fonts relative to height
+    pygame.font.init()
+    title_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.09))
+    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.045))
+
+    # Background
+    background = load_image("assets/DamSequences/DamStatics/DamStatics.jpg")
+    background = pygame.transform.scale(background, (SCREEN_WIDTH, SCREEN_HEIGHT))
+    screen.blit(background, (0, 0))
+
+    # Title
+    title_text = title_font.render("Controls", True, text_color)
+    title_rect = title_text.get_rect(center=(SCREEN_WIDTH // 2, int(SCREEN_HEIGHT * 0.07)))
+    screen.blit(title_text, title_rect)
+
+    # Arrow keys
+    draw_arrow_keys(screen, SCREEN_WIDTH // 2, int(SCREEN_HEIGHT * 0.28), 'up' if show_pressed_keys else 'down')
+
+    # Keyboard caption
+    up_caption = caption_font.render("Press up/down to open/close the gates.", True, text_color)
+    up_caption_rect = up_caption.get_rect(center=(SCREEN_WIDTH // 2, int(SCREEN_HEIGHT * 0.42)))
+    screen.blit(up_caption, up_caption_rect)
+
+    # Mouse image
+    mouse_image_original = load_image("assets/RoRStatics/mouse.png")
+    original_size = mouse_image_original.get_size()
+    scale_factor = SCREEN_HEIGHT * 0.00055
+    new_size = (int(original_size[0] * scale_factor), int(original_size[1] * scale_factor))
+    mouse_image = pygame.transform.smoothscale(mouse_image_original, new_size)
+    mouse_rect = mouse_image.get_rect(center=(SCREEN_WIDTH // 2, int(SCREEN_HEIGHT * 0.72)))
+
+    scroll_up_image = load_image("assets/RoRStatics/Scroll_Up.png")
+    scroll_down_image = load_image("assets/RoRStatics/Scroll_Down.png")
+    rect_width = int(SCREEN_WIDTH * 0.011)
+    rect_height = int(SCREEN_HEIGHT * 0.054)
+    rect_x = int(SCREEN_WIDTH * 0.496)
+    rect_y = int(SCREEN_HEIGHT * 0.63)
+   
+    if show_blinking_rect: #Show Up
+        scroll_up_image = pygame.transform.smoothscale(scroll_up_image, (rect_width, rect_height))
+        screen.blit(scroll_up_image, (rect_x, rect_y))
+    else: #Show Down
+        scroll_down_image = pygame.transform.smoothscale(scroll_down_image, (rect_width, rect_height))
+        screen.blit(scroll_down_image, (rect_x, rect_y))
+
+    screen.blit(mouse_image, mouse_rect)
+
+    # Mouse caption
+    mouse_caption = caption_font.render("Scroll up/down to open/close the gates.", True, text_color)
+    mouse_caption_rect = mouse_caption.get_rect(center=(SCREEN_WIDTH // 2, int(SCREEN_HEIGHT * 0.92)))
+    screen.blit(mouse_caption, mouse_caption_rect)
+
 def load_bar_frames():
     frames = []
     for i in range(BAR_IMAGE_COUNT):
@@ -803,7 +1091,7 @@ def load_bar_frames():
             sys.exit(1)
     return frames
 
-def update_dam_graph(x_start, x_end, power_data, display):
+def update_dam_graph(x_start=0, x_end=5, power_data=[], display=0):
     global LOAD_CURVE
     x = np.linspace(x_start, x_end, 100)
 
@@ -815,7 +1103,7 @@ def update_dam_graph(x_start, x_end, power_data, display):
     ax.set_facecolor((0, 0, 0, 0))
     plt.plot(power_x, power_data, label='Power Generated', color='red')
     indices = (np.arange(display, display + 100) % len(LOAD_CURVE))
-    plt.plot(x, (LOAD_CURVE[indices]/6)-10, label='Load Curve', color='white')
+    plt.plot(x, (LOAD_CURVE[indices]/6)-15, label='Load Curve', color='white')
     plt.xlim(x_start, x_end)
     plt.ylim(0, 100)
     plt.axis('off')
@@ -833,11 +1121,11 @@ def update_dam_graph(x_start, x_end, power_data, display):
 def reset_Dam():
     """Reset game variables to initial conditions."""
     return {
-        'water_level': 3.0,
-        'water_volume': 9.0,
-        'intake_rate': 1.5,
-        'base_outer_flow': 2.8,
-        'active_outer_flow': 2.8,
+        'water_level': 0,
+        'water_volume': 45.0,
+        'intake_rate': 2.5,
+        'base_outer_flow': 4.0,
+        'active_outer_flow': 4.0,
         'spillway_rate': 0.0,
         'wasted_water': 0.0,
         'gates': [0,0,0,0],
@@ -850,7 +1138,114 @@ def reset_Dam():
         'level_complete': False
     }
 
+def volume_to_elevation(volume,a,b):
+    """Convert water volume to water elevation in the reservoir."""
+    #c*sqrt+d
+    elevation = np.sqrt(a * volume + b)
+    return elevation
+
+def draw_dam_colormap(Q_val, h_val):
+    global fig_colormap, ax_colormap, canvas_colormap, red_dot
+    if fig_colormap:
+        plt.close(fig_colormap)
+
+    if SCREEN_WIDTH == 960:
+        fig_colormap, ax_colormap = plt.subplots(figsize=(2.5, 2), dpi=100)
+    elif SCREEN_WIDTH == 1280:
+        fig_colormap, ax_colormap = plt.subplots(figsize=(3.5, 2.5), dpi=100)
+    elif SCREEN_WIDTH == 1600:
+        fig_colormap, ax_colormap = plt.subplots(figsize=(4.5, 3), dpi=100)
+    Q = np.linspace(0, 4, 50)
+    h = np.linspace(0, 100, 200)
+    Q_grid, h_grid = np.meshgrid(Q, h)
+    P_grid = (Q_grid * g * h_grid)/40
+    cmap = plt.get_cmap('viridis')
+    c = ax_colormap.pcolormesh(Q_grid, h_grid, P_grid, shading='auto', cmap=cmap)
+    cbar = fig_colormap.colorbar(c, ax=ax_colormap, label="Power (MW)")
+    cbar.ax.yaxis.label.set_color("white")
+    cbar.set_ticks([])
+    cbar.outline.set_edgecolor("white")
+    red_dot = ax_colormap.plot(Q_val, h_val, 'ro')[0]
+    ax_colormap.set_xlabel("Flow Rate Q (cfs)", color='white')
+    ax_colormap.set_ylabel("Head h (ft)", color='white')
+    for spine in ax_colormap.spines.values():
+        spine.set_color("white")
+    ax_colormap.set_xticks([])
+    ax_colormap.set_yticks([])
+    fig_colormap.tight_layout()
+    fig_colormap.patch.set_alpha(0)         # transparent figure background
+    ax_colormap.set_facecolor((0,0,0,0))    # transparent axes background
+    canvas_colormap = FigureCanvasAgg(fig_colormap)
+    canvas_colormap.draw()
+    raw_data = canvas_colormap.get_renderer().buffer_rgba()
+    size = canvas_colormap.get_width_height()
+    return pygame.image.frombuffer(raw_data, size, "RGBA")
+
+def update_dam_colormap(Q_val, h_val):
+    global red_dot, canvas_colormap
+    red_dot.set_data([Q_val], [h_val])
+    canvas_colormap.draw()
+    raw_data = canvas_colormap.get_renderer().buffer_rgba()
+    size = canvas_colormap.get_width_height()
+    return pygame.image.frombuffer(raw_data, size, "RGBA")
+
 # --- PSH Level Functions ---
+def draw_controls_page_PSH(screen, show_pressed_keys, show_blinking_rect):
+    # Colors
+    text_color = (255, 255, 255)
+
+    # Fonts relative to height
+    pygame.font.init()
+    title_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.09))
+    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.045))
+
+    # Background
+    background = load_image("assets/PSHSequences/PSHStatics/PSHStatics.jpg")
+    background = pygame.transform.scale(background, (SCREEN_WIDTH, SCREEN_HEIGHT))
+    screen.blit(background, (0, 0))
+
+    # Title
+    title_text = title_font.render("Controls", True, text_color)
+    title_rect = title_text.get_rect(center=(SCREEN_WIDTH // 2, int(SCREEN_HEIGHT * 0.07)))
+    screen.blit(title_text, title_rect)
+
+    # Arrow keys
+    draw_arrow_keys(screen, SCREEN_WIDTH // 2, int(SCREEN_HEIGHT * 0.28), 'up' if show_pressed_keys else 'down')
+
+    # Keyboard caption
+    up_caption = caption_font.render("Press up/down to increase/decrease power generation.", True, text_color)
+    up_caption_rect = up_caption.get_rect(center=(SCREEN_WIDTH // 2, int(SCREEN_HEIGHT * 0.42)))
+    screen.blit(up_caption, up_caption_rect)
+
+    # Mouse image
+    mouse_image_original = load_image("assets/RoRStatics/mouse.png")
+    original_size = mouse_image_original.get_size()
+    scale_factor = SCREEN_HEIGHT * 0.00055
+    new_size = (int(original_size[0] * scale_factor), int(original_size[1] * scale_factor))
+    mouse_image = pygame.transform.smoothscale(mouse_image_original, new_size)
+    mouse_rect = mouse_image.get_rect(center=(SCREEN_WIDTH // 2, int(SCREEN_HEIGHT * 0.72)))
+
+    scroll_up_image = load_image("assets/RoRStatics/Scroll_Up.png")
+    scroll_down_image = load_image("assets/RoRStatics/Scroll_Down.png")
+    rect_width = int(SCREEN_WIDTH * 0.011)
+    rect_height = int(SCREEN_HEIGHT * 0.054)
+    rect_x = int(SCREEN_WIDTH * 0.496)
+    rect_y = int(SCREEN_HEIGHT * 0.63)
+   
+    if show_blinking_rect: #Show Up
+        scroll_up_image = pygame.transform.smoothscale(scroll_up_image, (rect_width, rect_height))
+        screen.blit(scroll_up_image, (rect_x, rect_y))
+    else: #Show Down
+        scroll_down_image = pygame.transform.smoothscale(scroll_down_image, (rect_width, rect_height))
+        screen.blit(scroll_down_image, (rect_x, rect_y))
+
+    screen.blit(mouse_image, mouse_rect)
+
+    # Mouse caption
+    mouse_caption = caption_font.render("Scroll up/down to increase/decrease power generation.", True, text_color)
+    mouse_caption_rect = mouse_caption.get_rect(center=(SCREEN_WIDTH // 2, int(SCREEN_HEIGHT * 0.92)))
+    screen.blit(mouse_caption, mouse_caption_rect)
+
 def load_upper_reservoir_frames(num_frames, path_template):
     frames = []
     for i in range(num_frames):
@@ -864,7 +1259,7 @@ def load_upper_reservoir_frames(num_frames, path_template):
             sys.exit(1)
     return frames
 
-def update_psh_graph(x_start, x_end, power_data, display):
+def update_psh_graph(x_start=0, x_end=5, power_data=[], display=0):
     global PSH_LOAD
     x = np.linspace(x_start, x_end, 100)
     power_x = np.linspace(x_start, x_start + 0.5, len(power_data))
@@ -875,7 +1270,7 @@ def update_psh_graph(x_start, x_end, power_data, display):
     plt.axhline(y=0, color='white', linestyle='--', linewidth=1)
     plt.plot(power_x, power_data, label='Power Generated', color='red')
     indices = (np.arange(display, display + 100) % len(PSH_LOAD))
-    plt.plot(x, PSH_LOAD[indices]/6, label='Load Curve', color='white')
+    plt.plot(x, (PSH_LOAD[indices]/6)-20, label='Load Curve', color='white')
     plt.xlim(x_start, x_end)
     plt.ylim(-100, 100)
     plt.axis('off')
@@ -894,9 +1289,10 @@ def reset_PSH():
     return {
         'release': 0.0,
         'power_data': [],
-        'imbalances': [],
+        'score': 0.0,
         'x_start': 0,
         'x_end': 5,
+        'elapsed_time': 0.0,
         'level_complete': False,
     }
 
@@ -930,7 +1326,7 @@ def get_button_outline_color(game):
     return (255, 255, 255) if game['dark_mode'] else (0, 0, 0)
 
 def reset_env():
-    global SCREEN_WIDTH, SCREEN_HEIGHT
+    global SCREEN_WIDTH, SCREEN_HEIGHT, TARGET
     return {
         'window_width': SCREEN_WIDTH,
         'window_height': SCREEN_HEIGHT,
@@ -949,7 +1345,7 @@ def reset_env():
         'button_anim_duration': 0.2,
         'button_animations': {},
     # Initial hourly releases.
-        'y_values': 0.2 * np.ones(24),
+        'y_values': (TARGET/24) * np.ones(24),
         'selected_bar': None,
         'dragging': False,
         'last_mouse_y': None,
@@ -1021,7 +1417,7 @@ def update_layout(game):
     game['buttons'] = buttons
 
     panel_margin = int(10 * game['window_width'] / 1200)
-    labels = ["Total revenue ($)", "Total release (AF)", "Maximum ramp up", "Maximum ramp down"]
+    labels = ["Total revenue", "Total release", "Maximum ramp up", "Maximum ramp down"]
     panel_count = len(labels)
     panel_width = (game['total_panel_area'].width - (panel_count - 1) * panel_margin) // panel_count
     panel_height = game['total_panel_area'].height
@@ -1100,11 +1496,11 @@ def draw_bar_graph(game):
     screen = game['screen']
     bar_graph_area = game['bar_graph_area']
     pygame.draw.rect(screen, get_panel_color(game), bar_graph_area, 2)
-    max_value = 2.5
+    max_value = 5000
     pygame.draw.line(screen, get_text_color(game),
                      (bar_graph_area.x, bar_graph_area.y),
                      (bar_graph_area.x, bar_graph_area.y + bar_graph_area.height), 2)
-    tick_interval = 0.5
+    tick_interval = 1000
     num_ticks = int(max_value / tick_interval) + 1
     for i in range(num_ticks):
         tick_value = i * tick_interval
@@ -1112,7 +1508,7 @@ def draw_bar_graph(game):
         pygame.draw.line(screen, get_text_color(game),
                          (bar_graph_area.x - int((5/800)*game['window_width']), y),
                          (bar_graph_area.x, y), 2)
-        tick_label = game['font'].render(f"{tick_value:.1f}", True, get_text_color(game))
+        tick_label = game['font'].render(f"{tick_value:,}", True, get_text_color(game))
         screen.blit(tick_label, (bar_graph_area.x - int((35/800)*game['window_width']), y - int((10/600)*game['window_height'])))
     pygame.draw.line(screen, get_text_color(game),
                      (bar_graph_area.x, bar_graph_area.y + bar_graph_area.height),
@@ -1128,7 +1524,7 @@ def draw_bar_graph(game):
         y = int(bar_graph_area.y + bar_graph_area.height - bar_height)
         color = (31, 119, 180)
         pygame.draw.rect(screen, color, (x, y, int(bar_width) - 2, bar_height))
-        text = game['font'].render(f"{value:.2f}", True, get_text_color(game))
+        text = game['font'].render(f"{int(value)}", True, get_text_color(game))
         text_rect = text.get_rect(center=(x + bar_width / 2, y - int((10/600)*game['window_height'])))
         screen.blit(text, text_rect)
 
@@ -1139,11 +1535,11 @@ def draw_bar_graph(game):
         y = bar_graph_area.y + bar_graph_area.height - (price_values[i] / max_value) * bar_graph_area.height
         price_points.append((x, y))
     if len(price_points) >= 2:
-        pygame.draw.lines(screen, get_text_color(game), False, price_points, 2)
+        pygame.draw.lines(screen, (255,0,0), False, price_points, 2)
 
     # Draw dashed lines (thresholds) after drawing bars & price points so they appear on top.
-    dashed_y_0_2 = bar_graph_area.y + bar_graph_area.height - (0.2 / max_value) * bar_graph_area.height
-    dashed_y_2_0 = bar_graph_area.y + bar_graph_area.height - (2.0 / max_value) * bar_graph_area.height
+    dashed_y_0_2 = bar_graph_area.y + bar_graph_area.height - (400 / max_value) * bar_graph_area.height
+    dashed_y_2_0 = bar_graph_area.y + bar_graph_area.height - (4000 / max_value) * bar_graph_area.height
     draw_dashed_line(screen, get_text_color(game),
                      (bar_graph_area.x, dashed_y_0_2),
                      (bar_graph_area.x + bar_graph_area.width, dashed_y_0_2),
@@ -1155,48 +1551,39 @@ def draw_bar_graph(game):
     
     # Dynamically size the legend based on the bar graph dimensions.
     legend_width = int(game['bar_graph_area'].width * 0.2)
-    legend_height = int(game['bar_graph_area'].height * 0.15)
+    legend_height = int(game['bar_graph_area'].height * 0.2)
     legend_x = game['bar_graph_area'].right - legend_width - int((0.02)*game['window_width'])
     legend_y = game['bar_graph_area'].y + int((0.02)*game['window_height'])
     legend_rect = pygame.Rect(legend_x, legend_y, legend_width, legend_height)
     pygame.draw.rect(screen, get_panel_color(game), legend_rect)
     pygame.draw.rect(screen, get_text_color(game), legend_rect, 2)
-    dash_start = (legend_rect.x + int((0.07)*legend_width), legend_rect.y + int((0.3)*legend_height))
-    dash_end = (legend_rect.x + int((0.2)*legend_width), legend_rect.y + int((0.3)*legend_height))
+    dash_start = (legend_rect.x + int((0.07)*legend_width), legend_rect.y + int((0.25)*legend_height))
+    dash_end = (legend_rect.x + int((0.2)*legend_width), legend_rect.y + int((0.25)*legend_height))
     draw_dashed_line(screen, get_text_color(game), dash_start, dash_end, width=2, dash_length=4, space_length=3)
-    price_text = game['font'].render("Release limit (AF/hr)", True, get_text_color(game))
-    screen.blit(price_text, (legend_rect.x + int((0.3)*legend_width), legend_rect.y + int((0.13)*legend_height)))
-    pygame.draw.rect(screen, (31, 119, 180), (legend_rect.x + int((0.07)*legend_width), legend_rect.y + int((0.6)*legend_height), int((0.15)*legend_width), int((0.3)*legend_height)))
-    rel_text = game['font'].render("Releases (AF)", True, get_text_color(game))
-    screen.blit(rel_text, (legend_rect.x + int((0.3)*legend_width), legend_rect.y + int((0.55)*legend_height)))
-    
-    # Draw x-axis ticks and labels.
-    x_ticks = [0, 5, 10, 15, 20]
-    for tick in x_ticks:
-        tick_x = bar_graph_area.x + left_margin + (tick + 0.5) * bar_width
-        pygame.draw.line(screen, get_text_color(game),
-                         (tick_x, bar_graph_area.y + bar_graph_area.height),
-                         (tick_x, bar_graph_area.y + bar_graph_area.height + int((5/600)*game['window_height'])), 2)
-        tick_label = game['font'].render(str(tick), True, get_text_color(game))
-        screen.blit(tick_label, (tick_x - tick_label.get_width() // 2,
-                                  bar_graph_area.y + bar_graph_area.height + int((8/600)*game['window_height'])))
+    release_limit_text = game['font'].render("Release limit (cfs)", True, get_text_color(game))
+    screen.blit(release_limit_text, (legend_rect.x + int((0.3)*legend_width), legend_rect.y + int((0.1)*legend_height)))
+    pygame.draw.rect(screen, (31, 119, 180), (legend_rect.x + int((0.07)*legend_width), legend_rect.y + int((0.49)*legend_height), int((0.15)*legend_width), int((0.15)*legend_height)))
+    rel_text = game['font'].render("Releases (cfs)", True, get_text_color(game))
+    screen.blit(rel_text, (legend_rect.x + int((0.3)*legend_width), legend_rect.y + int((0.41)*legend_height)))
+    price_curve_text = game['font'].render("Price ($/MWh)", True, get_text_color(game))
+    screen.blit(price_curve_text, (legend_rect.x + int((0.3)*legend_width), legend_rect.y + int((0.71)*legend_height)))
+    pygame.draw.line(screen, (255, 0, 0), (legend_rect.x + int((0.07)*legend_width), legend_rect.y + int((0.83)*legend_height)), (legend_rect.x + int((0.2)*legend_width), legend_rect.y + int((0.83)*legend_height)), 2)
 
-    x_axis_title = game['font'].render("Hours", True, get_text_color(game))
-    x_title_rect = x_axis_title.get_rect(center=(bar_graph_area.centerx,
-                                                 bar_graph_area.y + bar_graph_area.height + int((30/600)*game['window_height'])))
-    screen.blit(x_axis_title, x_title_rect)
-    y_axis_title = game['font'].render("Hourly release (AF/hr)", True, get_text_color(game))
+    y_axis_title = game['font'].render("Hourly release (cfs)", True, get_text_color(game))
     y_axis_title_rotated = pygame.transform.rotate(y_axis_title, 90)
     y_title_rect = y_axis_title_rotated.get_rect(center=(bar_graph_area.x - int((50/800)*game['window_width']),
                                                          bar_graph_area.centery))
     screen.blit(y_axis_title_rotated, y_title_rect)
 
+    x_axis_title = game['font'].render("Hours", True, get_text_color(game))
+    screen.blit(x_axis_title,(SCREEN_WIDTH//2 - x_axis_title.get_width()//1.35,0.62*SCREEN_HEIGHT))
+
 def draw_total_bars(game):
     screen = game['screen']
     total_bar_graphs = game['total_bar_graphs']
     metrics = {
-        "Total revenue ($)": (game['total_revenue'], optimal_value, "Optimal value"),
-        "Total release (AF)": (game['total_sum'], TARGET, "Daily target"),
+        "Total revenue": (game['total_revenue'], optimal_value, "Optimal value"),
+        "Total release": (game['total_sum'], TARGET, "Total Release Volume"),
         "Maximum ramp up": (game['maximum_ramp_up_rate'], max_ramp_up, "Ramp up limit"),
         "Maximum ramp down": (game['maximum_ramp_down_rate'], max_ramp_down, "Ramp down limit"),
     }
@@ -1216,11 +1603,11 @@ def draw_total_bars(game):
             bar_height
         )
 
-        if key == "Total revenue ($)":
+        if key == "Total revenue":
             color = (31, 119, 180)
             if abs(value - target_value) <= target_tol:
                 color = (0, 200, 0)
-        elif key == "Total release (AF)":
+        elif key == "Total release":
             color = (0, 200, 0) if abs(value - target_value) <= target_tol else (200, 0, 0)
         elif key == "Maximum ramp up":
             color = (200, 0, 0)
@@ -1350,12 +1737,7 @@ def handle_button_click(game, pos):
                 check_action(game)
             elif label == "Instructions":
                 game['show_instructions'] = True
-                game['message'] = "\n".join(textwrap.wrap(
-                    "Find the best hydropower revenue by changing the hourly releases - click and drag the bars to adjust. "
-                    "The curve represents the price of energy at each hour, and is your guide to maximize revenue. "
-                    "Ensure all environmental rules are met: daily target, minimum release, "
-                    "maximum ramp up, and maximum ramp down. To complete the level, you must obtain "
-                    "both a feasible solution and at least a 90% optimality, then check your solution.", width=80))
+                game['message'] = "\n Find the best hydropower revenue by changing the hourly releases - click and drag the bars to adjust. \n The curve represents the price of energy at each hour, and is your guide to maximize revenue. \n Ensure all environmental rules are met: daily target, minimum release, maximum ramp up, and maximum ramp down. \n To complete the level, you must obtain both a feasible solution and at least a 90% optimality, then check your solution."
             elif label == "Dark Mode":
                 game['dark_mode'] = not game['dark_mode']
             return
@@ -1369,6 +1751,7 @@ def start_action(game):
     game['level_complete'] = False
 
 def check_action(game):
+    global revenue_pct
     update_metrics(game)
     time_to_find = time.time() - game['start_time']
     revenue_pct = 100 * game['total_revenue'] / optimal_value if optimal_value else 0
@@ -1387,9 +1770,10 @@ def check_action(game):
     # Do not reset the timer here.
 
 def handle_events_env(game):
-    global level_completed
+    global level_completed, revenue_pct, level_scores
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
+            save_game_data()
             pygame.quit()
             sys.exit()
 
@@ -1410,7 +1794,9 @@ def handle_events_env(game):
                         continue
                     if (game.get('level_complete_button_rect')
                             and game['level_complete_button_rect'].collidepoint(pos)):
-                        level_completed[3] = True
+                        level_completed[4] = True
+                        if level_scores[4] < int((revenue_pct-90)*1000):
+                            level_scores[4] = int((revenue_pct-90)*1000)
                         game['running'] = False
                         break
                 if game['button_area'].collidepoint(pos):
@@ -1432,9 +1818,9 @@ def handle_events_env(game):
         elif event.type == pygame.MOUSEMOTION:
             if game['dragging'] and game['selected_bar'] is not None:
                 dy = game['last_mouse_y'] - event.pos[1]
-                sensitivity = 0.005
+                sensitivity = 4.5
                 delta = dy * sensitivity
-                new_value = np.clip(game['y_values'][game['selected_bar']] + delta, 0.2, 2.0)
+                new_value = np.clip(game['y_values'][game['selected_bar']] + delta, 400, 4000)
                 game['y_values'][game['selected_bar']] = new_value
                 game['last_mouse_y'] = event.pos[1]
 
@@ -1442,14 +1828,6 @@ def handle_events_env(game):
             if event.key == pygame.K_ESCAPE:
                 game['message'] = ""
                 game['show_instructions'] = False
-
-"""def save_game_data():
-    data = {
-        'accessible_levels': accessible_levels,
-        'level_best_times': level_best_times
-    }
-    with open(SAVE_FILE, 'w') as file:
-        json.dump(data, file)"""
 
 # --- Load all assets once ---
 assets_path = "assets/Transitions"
@@ -1518,13 +1896,6 @@ def opening_screen(background, argonne_logo, nrel_logo, doe_logo):
 
     # Sponsor phase
     while not finished:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
-                finished = True
-
         screen.fill((0,0,0))
 
         if phase in ("fade_in_dev", "hold_dev", "fade_out_dev"):
@@ -1579,6 +1950,13 @@ def opening_screen(background, argonne_logo, nrel_logo, doe_logo):
                 alpha -= fade_speed
                 if alpha <= 0:
                     finished = True
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                finished = True
 
         pygame.display.flip()
         clock.tick(60)
@@ -1586,6 +1964,7 @@ def opening_screen(background, argonne_logo, nrel_logo, doe_logo):
     # Fade in background
     bg_alpha = 0
     bg_surface = background.copy()
+
     while bg_alpha < 255:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -1605,6 +1984,20 @@ def opening_screen(background, argonne_logo, nrel_logo, doe_logo):
     pulse_increasing = True
     waiting = True
     while waiting:
+        screen.blit(background, (0, 0))
+
+        pulsing_title1 = title_text1.copy()
+        pulsing_title1.set_alpha(pulse_alpha)
+        screen.blit(pulsing_title1, title_rect1)
+
+        pulsing_title2 = title_text2.copy()
+        pulsing_title2.set_alpha(pulse_alpha)
+        screen.blit(pulsing_title2, title_rect2)
+
+        pulsing_prompt = prompt_text.copy()
+        pulsing_prompt.set_alpha(pulse_alpha)
+        screen.blit(pulsing_prompt, prompt_rect)
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
@@ -1623,26 +2016,15 @@ def opening_screen(background, argonne_logo, nrel_logo, doe_logo):
                 pulse_alpha = 100
                 pulse_increasing = True
 
-        screen.blit(background, (0, 0))
-
-        pulsing_title1 = title_text1.copy()
-        pulsing_title1.set_alpha(pulse_alpha)
-        screen.blit(pulsing_title1, title_rect1)
-
-        pulsing_title2 = title_text2.copy()
-        pulsing_title2.set_alpha(pulse_alpha)
-        screen.blit(pulsing_title2, title_rect2)
-
-        pulsing_prompt = prompt_text.copy()
-        pulsing_prompt.set_alpha(pulse_alpha)
-        screen.blit(pulsing_prompt, prompt_rect)
-
         pygame.display.flip()
-        clock.tick(30)
+        clock.tick(60)
 
 def main_menu():
-    global background1,background2, background3, border_frame, SCREEN_WIDTH, SCREEN_HEIGHT
-    menu_items = ["New Game", "Continue Game", "Settings", "Credits"]
+    global background1,background2, background3, border_frame, SCREEN_WIDTH, SCREEN_HEIGHT, has_save_file
+    if has_save_file:
+        menu_items = ["New Game", "Continue Game", "Settings", "Credits"]
+    else:
+        menu_items = ["New Game", "Settings", "Credits"]
     running = True
     while running:
         title_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.07), bold=True)
@@ -1692,30 +2074,18 @@ def main_menu():
         redi_text = button_font.render("Visit REDi Island!", True, (255, 255, 255))
         redi_hover_text = button_font.render("Visit REDi Island!", True, (173, 216, 230))
         redi_text_rect = redi_text.get_rect(center=redi_rect.center)
-        mouse_pos = pygame.mouse.get_pos()
-
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                # Check main menu buttons
-                for label, rect, _, _, _ in buttons:
-                    if rect.collidepoint(mouse_pos):
-                        if label == "New Game":
-                            new_game()
-                            character_select()
-                            level_select()
-                        elif label == "Continue Game":
-                            level_select()
-                        elif label == "Settings":
-                            settings_screen()
-                        elif label == "Credits":
-                            credits_screen()
-                        
-                # Check REDi Island button
-                if redi_rect.collidepoint(mouse_pos):
-                    webbrowser.open("https://www1.eere.energy.gov/apps/water/redi_island/#/large-island/")
+        # Our Website
+        website_rect = pygame.Rect(
+            SCREEN_WIDTH - redi_width - SCREEN_WIDTH * 0.32,
+            SCREEN_HEIGHT - redi_height - SCREEN_HEIGHT * 0.02,
+            redi_width,
+            redi_height
+        )
+        website_frame = redi_frame.copy()
+        website_hover_frame = redi_hover_frame.copy()
+        website_text = button_font.render("Visit our official webpage!", True, (255, 255, 255))
+        website_hover_text = button_font.render("Visit our official webpage!", True, (173, 216, 230))
+        website_text_rect = website_text.get_rect(center=website_rect.center)
 
         if SCREEN_WIDTH == 960:
             screen.blit(background1, (0, 0))
@@ -1725,8 +2095,9 @@ def main_menu():
             screen.blit(background3,(0,0))
         screen.blit(title_text, title_rect)
 
+        mouse_pos = pygame.mouse.get_pos()
         # Draw menu buttons
-        for _, rect, text_surf, hover_text_surf, text_rect in buttons:
+        for label, rect, text_surf, hover_text_surf, text_rect in buttons:
             if rect.collidepoint(mouse_pos):
                 screen.blit(hover_frame, rect)
                 screen.blit(hover_text_surf, text_rect)
@@ -1742,8 +2113,42 @@ def main_menu():
             screen.blit(redi_frame, redi_rect)
             screen.blit(redi_text, redi_text_rect)
 
+        # Draw REDi Island button
+        if website_rect.collidepoint(mouse_pos):
+            screen.blit(website_hover_frame, website_rect)
+            screen.blit(website_hover_text, website_text_rect)
+        else:
+            screen.blit(website_frame, website_rect)
+            screen.blit(website_text, website_text_rect)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                # Check main menu buttons
+                for label, rect, _, _, _ in buttons:
+                    if rect.collidepoint(mouse_pos):
+                        if label == "New Game":
+                            new_game()
+                            character_select()
+                            level_select()
+                        elif label == "Continue Game":
+                            if has_save_file:
+                                level_select()
+                        elif label == "Settings":
+                            settings_screen()
+                        elif label == "Credits":
+                            credits_screen()
+                        
+                # Check REDi Island button
+                if redi_rect.collidepoint(mouse_pos):
+                    webbrowser.open("https://www1.eere.energy.gov/apps/water/redi_island/#/large-island/")
+                elif website_rect.collidepoint(mouse_pos):
+                    webbrowser.open("https://www.anl.gov/hydropower/hydropower-game")
+
         pygame.display.flip()
-        clock.tick(30)
+        clock.tick(60)
 
 def character_select():
     global border_frame
@@ -1892,20 +2297,22 @@ def character_select():
                 handle_arrow_keys(event.key)
                 ignore_mouse_hover_until_move = True
         pygame.display.flip()
-        clock.tick(30)
+        clock.tick(60)
 
 def level_select():
-    global SCREEN_WIDTH, SCREEN_HEIGHT, screen, level_names, level_completed, selected_character
-    player_role = "Senior Hydropower Manager"
+    global SCREEN_WIDTH, SCREEN_HEIGHT, screen, level_names, level_completed, selected_character, unlocked_levels, level_scores
 
     max_body_height = int(SCREEN_HEIGHT * 0.8)
     body_image = load_image(f"assets/CYC_Assets/Bodies/B{selected_character}.jpg")
     scale_factor = max_body_height / body_image.get_height()
     new_size = (int(body_image.get_width() * scale_factor), int(body_image.get_height() * scale_factor))
     body_image = pygame.transform.smoothscale(body_image, new_size)
+    lock_image = load_image("assets/Lock.png")
 
     border_size = (body_image.get_width() + 2, body_image.get_height() + 2)
     body_border = pygame.transform.smoothscale(border_frame, border_size)
+
+    score_frame = pygame.transform.smoothscale(border_frame, (int(SCREEN_WIDTH * 0.07), int(SCREEN_HEIGHT * 0.05)))
 
     # Video background setup
     video_path = resource_path("assets/Transitions/OperatingBackground.mp4")
@@ -1916,21 +2323,21 @@ def level_select():
 
     name_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.035), bold=True)
     name_text = name_font.render(player_name, True, (255, 255, 255))
-    role_text = name_font.render(player_role, True, (255, 255, 255))
 
     preview_x = SCREEN_WIDTH - body_image.get_width() - int(SCREEN_WIDTH * 0.05)
     preview_y = (SCREEN_HEIGHT - body_image.get_height()) // 2
     text_x = preview_x + (body_image.get_width() - name_text.get_width()) // 2
     text_y = preview_y + int(body_image.get_height() * 0.85)
-    role_x = preview_x + (body_image.get_width() - role_text.get_width()) // 2
-    role_y = text_y + int(body_image.get_height() * 0.05)
 
     title_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.06), bold=True)
     level_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.025), bold=True)
     button_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
 
     title_text = title_font.render("Level Select", True, (255, 255, 255))
-    title_rect = title_text.get_rect(center=(SCREEN_WIDTH * 0.3, SCREEN_HEIGHT * 0.1))
+    title_rect = title_text.get_rect(center=(SCREEN_WIDTH * 0.25, SCREEN_HEIGHT * 0.15))
+
+    best_score_text = button_font.render("Best Score", True, (255, 255, 255))
+    best_score_rect = best_score_text.get_rect(center=(SCREEN_WIDTH * 0.5, SCREEN_HEIGHT * 0.15))
 
     exit_width = SCREEN_WIDTH * 0.15
     exit_height = SCREEN_HEIGHT * 0.06
@@ -1951,6 +2358,7 @@ def level_select():
     green_frame = tint_surface(frame, (0, 200, 0))
     hover_frame = tint_surface(frame, (50, 50, 50))
     indicator_size = int(button_height * 0.5)
+    lock_image = pygame.transform.smoothscale(lock_image, (indicator_size, indicator_size))
 
     play_width = button_width * 0.5
     play_height = SCREEN_HEIGHT * 0.06
@@ -1979,20 +2387,38 @@ def level_select():
         screen.blit(background, (0, 0))
 
         mouse_pos = pygame.mouse.get_pos()
-        unlocked_levels = [False] * len(level_names)
-        unlocked_levels[0] = True
         for i in range(1, len(level_names)):
             if level_completed[i - 1]:
                 unlocked_levels[i] = True
 
         screen.blit(title_text, title_rect)
+        screen.blit(best_score_text, best_score_rect)
+
+        if level_completed[5]:
+            player_role = "Power Market Operator"
+        elif level_completed[4]:
+            player_role = "Environmental Expert"
+        elif level_completed[3]:
+            player_role = "Senior Hydropower Engineer"
+        elif level_completed[2]:
+            player_role = "Hydropower Engineer"
+        elif level_completed[1]:
+            player_role = "Junior Hydropower Engineer"
+        elif level_completed[0]:
+            player_role = "Hydropower Intern"
+        else:
+            player_role = "New Hire"
+        role_text = name_font.render(player_role, True, (255, 255, 255))
+        role_x = preview_x + (body_image.get_width() - role_text.get_width()) // 2
+        role_y = text_y + int(body_image.get_height() * 0.05)
 
         level_rects = []
         for i, name in enumerate(level_names):
             rect = pygame.Rect(start_x, start_y + i * (button_height + spacing),
                                button_width, button_height)
-            unlocked = unlocked_levels[i]
+            unlocked = unlocked_levels[i] if i<5 else False
             completed = level_completed[i]
+            high_score = level_scores[i]
 
             if i == selected_level and unlocked:
                 frame_to_use = green_frame
@@ -2002,26 +2428,22 @@ def level_select():
                 frame_to_use = frame
             screen.blit(frame_to_use, rect)
 
+            if i != 0:
+                screen.blit(score_frame, ((SCREEN_WIDTH * 0.5)-(score_frame.get_width()/2), rect.y + (button_height - score_frame.get_height()) / 2))
+
             color = (255, 255, 255) if unlocked else (150, 150, 150)
             level_text = level_font.render(name, True, color)
             level_text_rect = level_text.get_rect(midleft=(rect.left + SCREEN_WIDTH * 0.02, rect.centery))
             screen.blit(level_text, level_text_rect)
+            if i != 0 and level_completed[i]:
+                score_text = level_font.render(f"{high_score}", True, color)
+                score_text_rect = score_text.get_rect(center=(SCREEN_WIDTH * 0.5, rect.centery))
+                screen.blit(score_text, score_text_rect)
 
             indicator_x = rect.right - indicator_size - SCREEN_WIDTH * 0.02
             indicator_y = rect.centery - indicator_size // 2
-            if completed:
-                pygame.draw.circle(screen, (0, 200, 0), (indicator_x + indicator_size // 2, indicator_y + indicator_size // 2),
-                                   indicator_size // 2)
-            elif unlocked:
-                pygame.draw.rect(screen, (200, 200, 200),
-                                 (indicator_x, indicator_y, indicator_size, indicator_size), 2)
-            else:
-                pygame.draw.line(screen, (200, 0, 0),
-                                 (indicator_x, indicator_y),
-                                 (indicator_x + indicator_size, indicator_y + indicator_size), 3)
-                pygame.draw.line(screen, (200, 0, 0),
-                                 (indicator_x + indicator_size, indicator_y),
-                                 (indicator_x, indicator_y + indicator_size), 3)
+            if not unlocked:
+                screen.blit(lock_image, (indicator_x, indicator_y))
 
             level_rects.append((rect, unlocked))
 
@@ -2037,6 +2459,7 @@ def level_select():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                save_game_data()
                 cap.release()
                 pygame.quit()
                 sys.exit()
@@ -2064,22 +2487,32 @@ def level_select():
                 if play_rect.collidepoint(mouse_pos) and unlocked_levels[selected_level]:
                     if selected_level == 0:
                         intro_level()
-                        Hydropower_Model()
                     elif selected_level == 1:
                         Level1_intro()
+                        RoR_Exploration()
+                        Load_Instructions(1)
+                        RoR_Controls()
                         RoR_Level()
                     elif selected_level == 2:
                         Level2_intro()
+                        Hydropower_Model()
+                        Level2_intro_cont()
+                        Dam_Exploration()
+                        Load_Instructions(2)
+                        Dam_Controls()
                         Dam_Level()
                     elif selected_level == 3:
                         Level3_intro()
+                        PSH_Exploration()
+                        Load_Instructions(3)
+                        PSH_Controls()
                         PSH_Level()
                     elif selected_level == 4:
                         Level4_intro()
                         Environment_Level()
 
         pygame.display.flip()
-        clock.tick(30)
+        clock.tick(60)
 
 def settings_screen():
     # Resolution options & buttons in a row
@@ -2138,27 +2571,6 @@ def settings_screen():
 
         mouse_pos = pygame.mouse.get_pos()
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                if exit_rect.collidepoint(mouse_pos):
-                    return  # Return to main menu
-
-                # Handle resolution clicks
-                for res, rect, _, _ in res_buttons:
-                    if rect.collidepoint(mouse_pos):
-                        print(f"Resolution set to {res}")
-                        # Parse resolution and apply change_screen_size
-                        width, height = map(int, res.split('x'))
-                        change_screen_size(width, height)
-
-                # Handle music clicks
-                for option, rect, _, _ in music_buttons:
-                    if rect.collidepoint(mouse_pos):
-                        print(f"Music turned {option}")
-
         # Draw background
         if SCREEN_WIDTH == 960:
             screen.blit(background1, (0, 0))
@@ -2192,28 +2604,132 @@ def settings_screen():
         screen.blit(red_frame, exit_rect)
         screen.blit(exit_text, exit_text_rect)
 
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if exit_rect.collidepoint(mouse_pos):
+                    return  # Return to main menu
+
+                # Handle resolution clicks
+                for res, rect, _, _ in res_buttons:
+                    if rect.collidepoint(mouse_pos):
+                        # Parse resolution and apply change_screen_size
+                        width, height = map(int, res.split('x'))
+                        change_screen_size(width, height)
+
+                # Handle music clicks
+                for option, rect, _, _ in music_buttons:
+                    if rect.collidepoint(mouse_pos):
+                        print(f"Music turned {option}")
+
         pygame.display.flip()
-        clock.tick(30)
+        clock.tick(60)
 
 def credits_screen():
     # Fonts
-    credits_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.05), bold=True)
-    button_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    text_font = pygame.font.SysFont(None, int(SCREEN_HEIGHT * 0.025))
+    button_font = pygame.font.SysFont(None, int(SCREEN_HEIGHT * 0.03), bold=True)
 
-    # "Credits here" text
-    credits_text = credits_font.render("Credits here", True, (255, 255, 255))
-    credits_rect = credits_text.get_rect(center=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2))
+    # Your credits text from the document
+    credits_text_str = """Credits and Legal Information
 
-    # Exit button size and position (top left, scaled by screen size)
+Copyright Notice
+
+© COPYRIGHT (2025) UChicago Argonne, LLC
+
+This game, including all its code, graphics, sounds, music, and other associated assets, is the intellectual property of UChicago Argonne, LLC. 
+Any unauthorized reproduction, distribution, or modification of this game or any portion thereof is strictly prohibited and may result in severe civil and criminal penalties.
+
+Beta Version Disclaimer
+
+This game is currently in its beta phase. As such, it may contain bugs, incomplete features, or other issues. 
+We are continuously working to improve the game, and your feedback is greatly appreciated. 
+A more definitive and comprehensive license agreement will be provided upon the official release of the full version.
+
+Disclaimers
+
+As-Is Basis: This game is provided "as is" without warranty of any kind, either express or implied, including, but not limited to, the implied warranties of merchantability, 
+fitness for a particular purpose, or non-infringement.
+
+Limitation of Liability: In no event shall UChicago Argonne, LLC be liable for any direct, indirect, incidental, special, exemplary, or consequential damages 
+(including, but not limited to, procurement of substitute goods or services; loss of use, data, or profits; or business interruption) 
+however caused and on any theory of liability, whether in contract, strict liability, or tort (including negligence or otherwise) arising in any way out of the use of this game, 
+even if advised of the possibility of such damage.
+
+Third-Party Resources and Acknowledgments
+
+We extend our sincere gratitude to the following individuals, organizations, and resources whose contributions and publicly available information have been 
+invaluable in the development of the Hydropower game.
+
+Research & Data Sources:
+
+REDi Island project: https://www.nrel.gov/water/redi-island
+
+The REDi Island project's contribution to this game builds upon their previous collaborative work with IKM, from whom they sourced 3D models. Specifically:
+
+3D Modeling & Animation:
+
+IKM Testing UK - For their expertise and contribution in 3D animation: https://www.ikm.com/ikm-testing-uk/3d-animation/
+
+AI-Generated Content:
+
+Google's Imagen - For the creation of AI-generated pictures used within this game.
+
+Python Libraries:
+
+Standard Python Library
+License: Python Software Foundation License (PSF License)
+Copyright: Python Software Foundation and individual contributors
+URL: https://www.python.org/about/legal/
+
+OpenCV (cv2)
+License: Apache License 2.0
+Copyright: OpenCV Team and Contributors
+URL: https://opencv.org/license/
+
+Pygame
+License: GNU LGPL version 2.1
+Copyright: Pygame Community and Contributors
+URL: https://www.pygame.org/docs/LGPL.txt
+
+NumPy
+License: BSD 3-Clause License
+Copyright: NumPy Developers
+URL: https://numpy.org/doc/stable/license.html
+
+Matplotlib
+License: Python Software Foundation License (BSD-style)
+Copyright: Matplotlib Development Team
+URL: https://matplotlib.org/stable/project/license.html
+
+OR-Tools
+License: Apache License 2.0
+Copyright: Google LLC
+URL: https://developers.google.com/optimization/
+
+Thank you for playing Hydropower Game!
+"""
+
+    # Split text into lines
+    credits_lines = credits_text_str.split("\n")
+
+    # Render all lines into surfaces
+    rendered_lines = [text_font.render(line, True, (255, 255, 255)) for line in credits_lines]
+
+    # Scroll variables
+    scroll_offset = 0
+    line_height = text_font.get_linesize()
+    total_text_height = len(rendered_lines) * line_height
+
+    # Exit button size and position
     button_width = SCREEN_WIDTH * 0.15
     button_height = SCREEN_HEIGHT * 0.06
-    button_rect = pygame.Rect(SCREEN_WIDTH * 0.02, SCREEN_HEIGHT * 0.02, button_width, button_height)
+    button_rect = pygame.Rect(SCREEN_WIDTH * 0.8, SCREEN_HEIGHT * 0.02, button_width, button_height)
 
-    # Prepare tinted red frame
     scaled_frame = pygame.transform.smoothscale(border_frame, (int(button_width), int(button_height)))
     red_frame = tint_surface(scaled_frame, (255, 0, 0))
-
-    # Exit text
     exit_text = button_font.render("Exit", True, (255, 255, 255))
     exit_text_rect = exit_text.get_rect(center=button_rect.center)
 
@@ -2223,20 +2739,45 @@ def credits_screen():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                mouse_pos = pygame.mouse.get_pos()
-                if button_rect.collidepoint(mouse_pos):
-                    return  # Return to main menu
 
-        # Draw screen
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:
+                    if button_rect.collidepoint(event.pos):
+                        return  # exit
+                elif event.button == 4:  # scroll up
+                    scroll_offset = min(scroll_offset + 20, 0)
+                elif event.button == 5:  # scroll down
+                    if total_text_height + scroll_offset > SCREEN_HEIGHT:
+                        scroll_offset -= 20
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_UP:
+                    scroll_offset = min(scroll_offset + 20, 0)
+                elif event.key == pygame.K_DOWN:
+                    if total_text_height + scroll_offset > SCREEN_HEIGHT:
+                        scroll_offset -= 20
+                elif event.key == pygame.K_PAGEUP:
+                    scroll_offset = min(scroll_offset + SCREEN_HEIGHT // 2, 0)
+                elif event.key == pygame.K_PAGEDOWN:
+                    if total_text_height + scroll_offset > SCREEN_HEIGHT:
+                        scroll_offset -= SCREEN_HEIGHT // 2
+
+        # Draw background
         screen.fill((0, 0, 0))
-        screen.blit(credits_text, credits_rect)
 
+        # Draw credits text
+        y_pos = scroll_offset
+        for line_surface in rendered_lines:
+            screen.blit(line_surface, (SCREEN_WIDTH * 0.05, y_pos))
+            y_pos += line_height
+
+        # Draw exit button
         screen.blit(red_frame, button_rect)
         screen.blit(exit_text, exit_text_rect)
 
         pygame.display.flip()
-        clock.tick(30)
+        clock.tick(60)
+
 
 # --- Game Levels ---
 def intro_level():
@@ -2285,13 +2826,14 @@ def intro_level():
     dialogue_scene2 = [
         ("Tom", "This is the turbine room of our Dam Hydropower Plant! "
                 "These large machines convert the kinetic energy from flowing water into electricity! "
-                "To introduce you to working with hydropower, let's start with a simple experiment.")
+                "I'm eager to start working with you! You will learn how to operate all of our plants here and about various aspects of hydropower.")
     ]
 
     scenes = [(scene1_image, dialogue_scene1), (scene2_image, dialogue_scene2)]
     if scenes:
         run_dialogue(scenes)
     level_completed[0] = True
+
 def Hydropower_Model():
     global SCREEN_WIDTH, SCREEN_HEIGHT
     # Colors
@@ -2301,15 +2843,17 @@ def Hydropower_Model():
     BLUE = (0, 0, 255)
     WIDTH, HEIGHT = SCREEN_WIDTH, SCREEN_HEIGHT
 
-    exit_width = SCREEN_WIDTH * 0.15
-    exit_height = SCREEN_HEIGHT * 0.06
-    exit_rect = pygame.Rect(SCREEN_WIDTH * 0.02, SCREEN_HEIGHT * 0.02, exit_width, exit_height)
-    exit_frame = pygame.transform.smoothscale(border_frame, (int(exit_width), int(exit_height)))
-    exit_red_frame = tint_surface(exit_frame, (255, 0, 0))
-    button_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
-    exit_text = button_font.render("Exit", True, (255, 255, 255))
-    exit_text_rect = exit_text.get_rect(center=exit_rect.center)
-
+    # Continue button setup
+    Continue_width = SCREEN_WIDTH * 0.15
+    Continue_height = SCREEN_HEIGHT * 0.06
+    Continue_rect = pygame.Rect(SCREEN_WIDTH - Continue_width - SCREEN_WIDTH * 0.02,
+                            SCREEN_HEIGHT - Continue_height - SCREEN_HEIGHT * 0.02,
+                            Continue_width, Continue_height)
+    Continue_frame = pygame.transform.smoothscale(border_frame, (int(Continue_width), int(Continue_height)))
+    Continue_green_frame = tint_surface(Continue_frame, (0, 200, 0))
+    Continue_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    Continue_text = Continue_font.render("Continue", True, (255, 255, 255))
+    Continue_text_rect = Continue_text.get_rect(center=Continue_rect.center)
 
     # Slider class
     class Slider:
@@ -2353,14 +2897,13 @@ def Hydropower_Model():
                     rel_x = event.pos[0] - self.rect.x
                     self.value = self.min_val + (rel_x / self.rect.w) * (self.max_val - self.min_val)
                     self.value = max(self.min_val, min(self.max_val, self.value))
-    Q_slider = Slider(0.15, 0.9, 0.3, 0.04, 0, 100, 10, 'Flow Rate Q (cfs)')
-    h_slider = Slider(0.55, 0.9, 0.3, 0.04, 0, 100, 10, 'Head h (ft)')
+    Q_slider = Slider(0.15, 0.82, 0.3, 0.04, 0, 10000, 1000, 'Flow Rate Q (cfs)')
+    h_slider = Slider(0.55, 0.82, 0.3, 0.04, 0, 100, 10, 'Head h (ft)')
 
     azim_angle = 225
     elev_angle = 30
     last_mouse_pos = (0, 0)
     is_dragging = False
-    show_3d_plot = True
 
     def mouse_over_slider(pos):
             return Q_slider.rect.collidepoint(pos) or h_slider.rect.collidepoint(pos)
@@ -2368,7 +2911,7 @@ def Hydropower_Model():
     running = True
     first_run = True
     slow_run = 0
-    UPDATE_INTERVAL = 4
+    UPDATE_INTERVAL = 6  # Update plot every 6 frames
 
     font_small = pygame.font.Font(None, int(0.045 * HEIGHT))
     font_large = pygame.font.Font(None, int(0.06 * HEIGHT))
@@ -2376,45 +2919,42 @@ def Hydropower_Model():
     while running:
         Q = Q_slider.value
         h = h_slider.value
-        P = Q * g * h/1000
+        P = 0.00007 * Q * h
 
         screen.fill(WHITE)
-        # Exit button
-        screen.blit(exit_red_frame, exit_rect)
-        screen.blit(exit_text, exit_text_rect)
 
-        # Draw equation and variable labels at the top
-        view_mode = "3D Surface Plot" if show_3d_plot else "2D Colormap"
-        blit_centered_text(screen, f"{view_mode} (TAB to toggle, R to reset view)", font_small, int(0.03 * HEIGHT))
-        blit_centered_text(screen, "Constants: η: Turbine efficiency, ρ: Water density, g: Gravity", font_small, int(0.11 * HEIGHT))
-        blit_centered_text(screen, "Variables: Q: Flow Rate, h: Head", font_small, int(0.145 * HEIGHT))
-        blit_centered_text(screen, "Explore the fundamental equation of Hydropower by adjusting the flow rate and head!", font_small, int(0.18 * HEIGHT))
-        blit_centered_text(screen, "Click and drag sliders to adjust parameters.", font_small, int(0.97 * HEIGHT))
-        if show_3d_plot:
-            blit_centered_text(screen, "Click and hold anywhere other than the sliders to rotate 3D-plot.", font_small, int(0.215 * HEIGHT))
-        screen.blit(font_large.render("P = ηρg·Q·h", True, BLACK), (int(0.325 * WIDTH), int(0.05 * HEIGHT)))
-        screen.blit(font_large.render(f"P = {P:.2f} kW", True, BLACK), (int(0.57 * WIDTH), int(0.05 * HEIGHT)))
-
-        
+        blit_centered_text(screen, "Explore the fundamental equation of Hydropower by adjusting the flow rate and head!", font_small, int(0.05 * HEIGHT))
+        blit_centered_text(screen, "Click and hold anywhere other than the sliders to rotate 3D-plot.", font_small, int(0.1 * HEIGHT))
+        blit_centered_text(screen, "Click and drag sliders to adjust parameters.", font_small, int(0.9 * HEIGHT))
+        blit_centered_text(screen, f"P = {P:.2f} MW", font_large, int(0.15 * HEIGHT))
 
         # Draw/update plot in the middle
         if first_run:
-            plot_surface = draw_3d_surface(Q, h, azim_angle, elev_angle) if show_3d_plot else draw_colormap(Q, h)
-            plot_rect = plot_surface.get_rect(center=(WIDTH // 2, int(0.58 * HEIGHT)))
+            plot1_surface = draw_3d_surface(Q, h, azim_angle, elev_angle) 
+            plot2_surface = draw_colormap(Q, h)
+            plot1_rect = plot1_surface.get_rect(center=(WIDTH // 4, int(0.5 * HEIGHT)))
+            plot2_rect = plot2_surface.get_rect(center=(3 * WIDTH // 4, int(0.5 * HEIGHT)))
             first_run = False
         else:
             if slow_run % UPDATE_INTERVAL == 0:
-                plot_surface = update_3d_surface(Q, h, azim_angle, elev_angle) if show_3d_plot else update_colormap(Q, h)
+                plot1_surface = update_3d_surface(Q, h, azim_angle, elev_angle)
+                plot2_surface = update_colormap(Q, h)
         slow_run += 1
 
-        screen.blit(plot_surface, plot_rect)
+        screen.blit(plot1_surface, plot1_rect)
+        screen.blit(plot2_surface, plot2_rect)
 
         # Draw sliders at bottom
         Q_slider.draw(screen)
         h_slider.draw(screen)
 
+        # Draw Continue button
+        screen.blit(Continue_green_frame, Continue_rect)
+        screen.blit(Continue_text, Continue_text_rect)
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                save_game_data()
                 pygame.quit()
                 sys.exit()
             Q_slider.update(event)
@@ -2422,8 +2962,8 @@ def Hydropower_Model():
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 is_dragging = not mouse_over_slider(event.pos)
                 last_mouse_pos = event.pos
-                if exit_rect.collidepoint(event.pos):
-                    return  # Exit back to the menu
+                if Continue_rect.collidepoint(event.pos):
+                    return
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 is_dragging = False
             elif event.type == pygame.MOUSEMOTION and is_dragging:
@@ -2434,22 +2974,13 @@ def Hydropower_Model():
                 elev_angle = max(-90, min(90, elev_angle))
                 last_mouse_pos = event.pos
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_TAB:
-                    show_3d_plot = not show_3d_plot
-                    if show_3d_plot and fig_colormap:
-                        plt.close(fig_colormap)
-                    elif not show_3d_plot and fig_3d:
-                        plt.close(fig_3d)
-                    first_run = True
-                elif event.key == pygame.K_r:
+                if event.key == pygame.K_r:
                     azim_angle = 225
                     elev_angle = 30
 
         pygame.display.flip()
     if fig_3d: plt.close(fig_3d)
     if fig_colormap: plt.close(fig_colormap)
-
-
 
 def Level1_intro():
     global selected_character, SCREEN_WIDTH, SCREEN_HEIGHT
@@ -2469,19 +3000,305 @@ def Level1_intro():
     dialogue_scene2 = [
         ("Tom",
          "This is our Run-of-River plant! You will attempt to match the electricity load curve for our city "
-         "by opening and closing the wicket gate in the turbine. You can control it with arrow keys, clicking "
-         "buttons on the control panel interface, or scrolling on your mouse! Go ahead and give it a try!")
+         "by opening and closing the wicket gate in the turbine. Go ahead and explore it before you get a chance to operate it!")
     ]
     scenes = [(scene1_image,dialogue_scene1),(scene2_image,dialogue_scene2)]
     run_dialogue(scenes)
 
+def RoR_Exploration():
+    static_image = load_image('assets/RoRStatics/RoRStatic.jpg')
+    static_image = pygame.transform.smoothscale(static_image, (SCREEN_WIDTH, SCREEN_HEIGHT))
 
+    gate_image = load_image('assets/RoRStatics/Wicket_gate.png')
+    turbine_image = load_image('assets/RoRStatics/Turbine.png')
+
+    turbine_image = pygame.transform.smoothscale(turbine_image, (turbine_image.get_width() * 0.09 * (SCREEN_WIDTH / 1280),
+                                                                 turbine_image.get_height() * 0.09 * (SCREEN_HEIGHT / 720)))
+
+    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.045))
+    name_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    description_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03))
+
+    # Frame and gate scaling
+    angles = [220 - i * 360 / NUM_OVALS for i in range(NUM_OVALS)]
+    active_circle_radius = SCREEN_WIDTH * 0.0875
+
+    frame_size = int(active_circle_radius * 2.7)
+    frame_x = int(SCREEN_WIDTH * 0.018)
+    frame_y = int(SCREEN_HEIGHT * 0.043)
+
+    scaled_frame = pygame.transform.smoothscale(border_frame, (frame_size, frame_size))
+
+    gate_scale_factor = 0.18
+    gate_size = int(frame_size * gate_scale_factor)
+    active_gate_image = pygame.transform.smoothscale(gate_image, (gate_size, gate_size))
+
+    center_x, center_y = frame_x + frame_size / 2, frame_y + frame_size / 2
+    positions = [
+        (center_x + active_circle_radius * np.cos(2 * np.pi * i / NUM_OVALS),
+         center_y + active_circle_radius * np.sin(2 * np.pi * i / NUM_OVALS))
+        for i in range(NUM_OVALS)
+    ]
+
+    gate_caption = caption_font.render("Wicket Gate Display", True, (255, 255, 255))
+    exploration_directions = caption_font.render("Explore the components by clicking on them!", True, (255, 255, 255))
+
+    graph_width = (1200 * SCREEN_WIDTH / 1920) / 2.8
+    graph_height = (900 * SCREEN_HEIGHT / 1080) / 2.8
+    graph_x = SCREEN_WIDTH - graph_width - SCREEN_WIDTH * 0.02
+    graph_y = int(SCREEN_HEIGHT * 0.075)
+    graph_border = pygame.transform.smoothscale(border_frame, (int(graph_width * 1.025), int(graph_height * 1.025)))
+
+    graph_filename = update_RoR_graph()
+    graph_image = load_image(graph_filename)
+    scaled_graph_image = pygame.transform.scale(graph_image, (graph_width, graph_height))
+
+    # Define the positions and radii of the 8 clickable circles
+    clickable_circles = [
+        {"name": "Load and Generation Plot", "pos": (SCREEN_WIDTH * 0.85, SCREEN_HEIGHT * 0.25), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Turbine", "pos": (SCREEN_WIDTH * 0.65, SCREEN_HEIGHT * 0.495), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Turbine", "pos": (SCREEN_WIDTH * 0.136, SCREEN_HEIGHT * 0.255), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Wicket Gate Blade", "pos": (SCREEN_WIDTH * 0.136, SCREEN_HEIGHT * 0.0975), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Generator", "pos": (SCREEN_WIDTH * 0.645, SCREEN_HEIGHT * 0.425), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Control Valve", "pos": (SCREEN_WIDTH * 0.457, SCREEN_HEIGHT * 0.49), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Tailrace", "pos": (SCREEN_WIDTH * 0.95, SCREEN_HEIGHT * 0.9), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Penstock", "pos": (SCREEN_WIDTH * 0.2, SCREEN_HEIGHT * 0.5), "radius": SCREEN_WIDTH * 0.01},
+    ]
+
+    component_descriptions = {
+        "Load and Generation Plot": "This plot shows the load demand and generation over time.",
+        "Turbine": "The turbine converts the kinetic energy of water into mechanical energy.",
+        "Wicket Gate Blade": "The wicket gate blade controls the flow of water to the turbine.",
+        "Generator": "The generator converts mechanical energy into electrical energy.",
+        "Control Valve": "The control valve regulates the flow of water in the system.",
+        "Tailrace": "The tailrace is the channel that carries water away from the turbine.",
+        "Penstock": "The penstock is the pipe that delivers water to the turbine."
+    }
+
+    # Text box setup
+    text_box_width = SCREEN_WIDTH * 0.75
+    text_box_height = SCREEN_HEIGHT * 0.15
+    text_box_x = SCREEN_WIDTH * 0.02
+    text_box_y = SCREEN_HEIGHT - text_box_height - SCREEN_HEIGHT * 0.02
+    text_box_frame = pygame.transform.smoothscale(border_frame, (int(text_box_width), int(text_box_height)))
+
+    # Variables to store the most recently clicked item's name and description
+    clicked_name = ""
+    clicked_description = ""
+    clicked_circle = None  # Track the currently clicked circle
+
+    # Continue button setup
+    Continue_width = SCREEN_WIDTH * 0.15
+    Continue_height = SCREEN_HEIGHT * 0.06
+    Continue_rect = pygame.Rect(SCREEN_WIDTH - Continue_width - SCREEN_WIDTH * 0.02,
+                            SCREEN_HEIGHT - Continue_height - SCREEN_HEIGHT * 0.02,
+                            Continue_width, Continue_height)
+    Continue_frame = pygame.transform.smoothscale(border_frame, (int(Continue_width), int(Continue_height)))
+    Continue_green_frame = tint_surface(Continue_frame, (0, 200, 0))
+    Continue_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    Continue_text = Continue_font.render("Continue", True, (255, 255, 255))
+    Continue_text_rect = Continue_text.get_rect(center=Continue_rect.center)
+
+    has_clicked = False  # Track if any circle has been clicked
+    running = True
+    while running:
+        screen.blit(static_image, (0, 0))
+        screen.blit(exploration_directions, (SCREEN_WIDTH / 2 - exploration_directions.get_width() / 2, SCREEN_HEIGHT * 0.15))
+        screen.blit(gate_caption, (frame_x + frame_size / 2 - gate_caption.get_width() / 2, frame_y - SCREEN_HEIGHT * 0.05))
+        screen.blit(scaled_frame, (frame_x, frame_y))
+        screen.blit(graph_border, (graph_x, graph_y))
+        screen.blit(scaled_graph_image, (graph_x, graph_y))
+
+        # Draw rotating gates
+        for i, (pos_x, pos_y) in enumerate(positions):
+            rotated_image = pygame.transform.rotozoom(active_gate_image, angles[i], 1.0)
+            rect = rotated_image.get_rect(center=(pos_x, pos_y))
+            screen.blit(rotated_image, rect.topleft)
+        screen.blit(turbine_image, (center_x - turbine_image.get_width() / 2, center_y - turbine_image.get_height() / 2))
+
+        pygame.draw.line(screen, GREEN, (frame_x+frame_size, frame_y), (0.62*SCREEN_WIDTH, 0.49*SCREEN_HEIGHT))
+        pygame.draw.line(screen, GREEN, (frame_x+frame_size, frame_y+(frame_size)), (0.62*SCREEN_WIDTH, 0.49*SCREEN_HEIGHT))
+
+        # Draw the clickable circles with hover and click effects
+        mouse_pos = pygame.mouse.get_pos()
+        for circle in clickable_circles:
+            distance = ((mouse_pos[0] - circle["pos"][0]) ** 2 + (mouse_pos[1] - circle["pos"][1]) ** 2) ** 0.5
+            if circle == clicked_circle:  # Click effect
+                pygame.draw.circle(screen, (0, 255, 0), circle["pos"], circle["radius"]*1.2)  # Green Fill
+            elif distance <= circle["radius"]:  # Hover effect
+                pygame.draw.circle(screen, (0, 255, 0), circle["pos"], circle["radius"])  # Semi-transparent fill
+            else:
+                pygame.draw.circle(screen, (0, 255, 0), circle["pos"], circle["radius"], 2)  # Default outline
+
+        # Draw the text box
+        if has_clicked:
+            screen.blit(text_box_frame, (text_box_x, text_box_y))
+            name_text = name_font.render(f"{clicked_name}", True, (255, 255, 255))
+            description_text = description_font.render(f"{clicked_description}", True, (255, 255, 255))
+            screen.blit(name_text, (text_box_x + SCREEN_WIDTH * 0.01, text_box_y + SCREEN_HEIGHT * 0.01))
+            screen.blit(description_text, (text_box_x + SCREEN_WIDTH * 0.01, text_box_y + SCREEN_HEIGHT * 0.05))
+
+        # Draw Continue button
+        screen.blit(Continue_green_frame, Continue_rect)
+        screen.blit(Continue_text, Continue_text_rect)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                save_game_data()
+                pygame.quit()
+                sys.exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                for circle in clickable_circles:
+                    distance = ((mouse_pos[0] - circle["pos"][0]) ** 2 + (mouse_pos[1] - circle["pos"][1]) ** 2) ** 0.5
+                    if distance <= circle["radius"]:
+                        clicked_name = circle["name"]
+                        clicked_description = component_descriptions[clicked_name]
+                        clicked_circle = circle  # Update the clicked circle
+                        has_clicked = True
+                if Continue_rect.collidepoint(mouse_pos):
+                    return  # Continue to the next part
+            else:
+                clicked_circle = None
+
+        pygame.display.flip()
+        clock.tick(60)
+
+def Load_Instructions(level_number):
+    if level_number == 1:
+        background = load_image('assets/RoRStatics/RoRStatic.jpg')
+    elif level_number == 2:
+        background = load_image('assets/DamSequences/DamStatics/DamStatics.jpg')
+    elif level_number == 3:
+        background = load_image('assets/PSHSequences/PSHStatics/PSHStatics.jpg')
+    background = pygame.transform.smoothscale(background, (SCREEN_WIDTH, SCREEN_HEIGHT))
+
+    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.05))
+    caption_text = caption_font.render("Use the hydropower generation to follow the electricity load!", True, (255, 255, 255))
+
+    # Continue button setup
+    Continue_width = SCREEN_WIDTH * 0.15
+    Continue_height = SCREEN_HEIGHT * 0.06
+    Continue_rect = pygame.Rect(SCREEN_WIDTH - Continue_width - SCREEN_WIDTH * 0.02,
+                            SCREEN_HEIGHT - Continue_height - SCREEN_HEIGHT * 0.02,
+                            Continue_width, Continue_height)
+    Continue_frame = pygame.transform.smoothscale(border_frame, (int(Continue_width), int(Continue_height)))
+    Continue_green_frame = tint_surface(Continue_frame, (0, 200, 0))
+    Continue_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    Continue_text = Continue_font.render("Continue", True, (255, 255, 255))
+    Continue_text_rect = Continue_text.get_rect(center=Continue_rect.center)
+    example_input = []
+    for i in range(len(LOAD_CURVE)-1):
+        example_input.append(int(LOAD_CURVE[i]/30))
+    example_data = []
+    x_start = 0
+    x_end = 5
+    example_index = 13
+    display = 0
+
+    graph_width = (1200*SCREEN_WIDTH / 1920)/1.5
+    graph_height = (900*SCREEN_HEIGHT / 1080)/1.5
+    graph_x = SCREEN_WIDTH//2 - graph_width//2
+    graph_y = SCREEN_HEIGHT//2 - graph_height//2
+    graph_border = pygame.transform.smoothscale(border_frame, (int(graph_width*1.025), int(graph_height*1.025)))
+    graph_border = tint_surface(graph_border,(50,50,50))
+    graph_border.set_alpha(230)
+
+    clock = pygame.time.Clock()
+    running = True
+    while running:
+        screen.blit(background, (0, 0))
+        screen.blit(caption_text, (SCREEN_WIDTH / 2 - caption_text.get_width() / 2, SCREEN_HEIGHT * 0.1))
+
+        example_data.append(example_input[example_index])
+
+        graph_filename = Example_Graph(x_start,x_end,example_data,display,2)
+        graph_image = load_image(graph_filename)
+
+        scaled_graph_image = pygame.transform.scale(graph_image, (graph_width, graph_height))
+        screen.blit(graph_border, (graph_x, graph_y))
+        screen.blit(scaled_graph_image, (graph_x, graph_y))
+        if len(example_data) > 10:
+                example_data = example_data[-10:]
+
+        x_start += 0.05
+        x_end += 0.05
+
+        example_index = example_index % (len(example_input)-1)
+        example_index += 1
+        
+        display = display % (len(LOAD_CURVE)-1)
+        display += 1
+        
+        # Draw Continue button
+        screen.blit(Continue_green_frame, Continue_rect)
+        screen.blit(Continue_text, Continue_text_rect)
+
+        os.remove(graph_filename)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                save_game_data()
+                pygame.quit()
+                sys.exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if Continue_rect.collidepoint(event.pos):
+                    return  # Continue to the next part
+        pygame.display.flip()
+        clock.tick(60)
+
+def RoR_Controls():
+    show_pressed_keys = True
+    show_blinking_rect = True
+    blink_timer = 0
+    blink_interval = 500
+
+    # Continue button setup
+    Continue_width = SCREEN_WIDTH * 0.15
+    Continue_height = SCREEN_HEIGHT * 0.06
+    Continue_rect = pygame.Rect(SCREEN_WIDTH - Continue_width - SCREEN_WIDTH * 0.02,
+                            SCREEN_HEIGHT - Continue_height - SCREEN_HEIGHT * 0.02,
+                            Continue_width, Continue_height)
+    Continue_frame = pygame.transform.smoothscale(border_frame, (int(Continue_width), int(Continue_height)))
+    Continue_green_frame = tint_surface(Continue_frame, (0, 200, 0))
+    Continue_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    Continue_text = Continue_font.render("Continue", True, (255, 255, 255))
+    Continue_text_rect = Continue_text.get_rect(center=Continue_rect.center)
+
+    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.045))
+    loading_text = caption_font.render("Loading...", True, (255, 255, 255))
+
+    clock = pygame.time.Clock()
+    running = True
+    while running:
+        blink_timer += clock.get_time()
+        if blink_timer >= blink_interval:
+            show_pressed_keys = not show_pressed_keys
+            show_blinking_rect = not show_blinking_rect
+            blink_timer = 0
+
+        draw_controls_page_ROR(screen, show_pressed_keys, show_blinking_rect)
+        screen.blit(Continue_green_frame, Continue_rect)
+        screen.blit(Continue_text, Continue_text_rect)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                save_game_data()
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if Continue_rect.collidepoint(event.pos):
+                    screen.blit(loading_text, (SCREEN_WIDTH / 2 - loading_text.get_width() / 2, SCREEN_HEIGHT / 2 - loading_text.get_height() / 2))
+                    pygame.display.flip()
+                    return  # Continue to the next part
+        pygame.display.flip()
+        clock.tick(60)
 
 def RoR_Level():
-    global NUM_ROR_FRAMES, WATER_PATH_TEMPLATE, TUBE_PATH_TEMPLATE, ROR_LEVEL_DURATION, MAX_ROTATION, MAX_RELEASE,ROTATION_ANGLE, NUM_OVALS 
-    global SCREEN_WIDTH, SCREEN_HEIGHT, level_completed, border_frame, control_panel, up_active, up_inactive, down_active, down_inactive
+    global NUM_ROR_FRAMES, WATER_PATH_TEMPLATE, TUBE_PATH_TEMPLATE, ROR_LEVEL_DURATION, MAX_ROTATION, ROTATION_ANGLE, NUM_OVALS 
+    global SCREEN_WIDTH, SCREEN_HEIGHT, level_completed, level_scores, border_frame, control_panel, up_active, up_inactive, down_active, down_inactive
     static_image = load_image('assets/RoRStatics/RoRStatic.jpg')
     gate_image = load_image('assets/RoRStatics/Wicket_gate.png')
+    water_image = load_image('assets/Water.png')
+    swirl_image = load_image('assets/RoRStatics/Swirl.png')
+    turbine_image = load_image('assets/RoRStatics/Turbine.png')
     water_frames = load_ROR_frames(NUM_ROR_FRAMES, WATER_LOWER_PATH_TEMPLATE)
     tube_frames = load_ROR_frames(NUM_ROR_FRAMES, TUBE_PATH_TEMPLATE)
     frame_index = 0
@@ -2490,6 +3307,9 @@ def RoR_Level():
     active_circle_radius = SCREEN_WIDTH * 0.0875
 
     statics_image = pygame.transform.smoothscale(static_image, (SCREEN_WIDTH, SCREEN_HEIGHT))
+    water_image = pygame.transform.smoothscale(water_image, (water_image.get_width()*0.03*(SCREEN_WIDTH/1280), water_image.get_height()*0.03*(SCREEN_HEIGHT/720)))
+    swirl_image = pygame.transform.smoothscale(swirl_image, (swirl_image.get_width()*0.45*(SCREEN_WIDTH/1280), swirl_image.get_height()*0.45*(SCREEN_HEIGHT/720)))
+    turbine_image = pygame.transform.smoothscale(turbine_image, (turbine_image.get_width()*0.09*(SCREEN_WIDTH/1280), turbine_image.get_height()*0.09*(SCREEN_HEIGHT/720)))
 
     graph_width = (1200*SCREEN_WIDTH / 1920)/2.8
     graph_height = (900*SCREEN_HEIGHT / 1080)/2.8
@@ -2504,6 +3324,11 @@ def RoR_Level():
     up_button_y = SCREEN_HEIGHT * 0.83
     down_button_y = SCREEN_HEIGHT * 0.93
 
+    up_active_ror = pygame.transform.smoothscale(up_active, (int(button_width), int(button_height)))
+    up_inactive_ror = pygame.transform.smoothscale(up_inactive, (int(button_width), int(button_height)))
+    down_active_ror = pygame.transform.smoothscale(down_active, (int(button_width), int(button_height)))
+    down_inactive_ror = pygame.transform.smoothscale(down_inactive, (int(button_width), int(button_height)))
+
     # --- Draw Wicket Gate Frame and Label ---
     frame_size = int(active_circle_radius * 2.7)
     frame_x = int(SCREEN_WIDTH * 0.018)
@@ -2513,6 +3338,7 @@ def RoR_Level():
 
     scaled_panel = pygame.transform.smoothscale(control_panel, ((control_panel.get_size()[0] * SCREEN_WIDTH / 1920)/2, 
                                                                       (control_panel.get_size()[1] * SCREEN_HEIGHT / 1080)/2))
+    scaled_panel.set_alpha(127)
 
     # Define gate size as a fraction of the frame
     gate_scale_factor = 0.18  # 20% of the frame size
@@ -2528,11 +3354,14 @@ def RoR_Level():
     ]
 
     if SCREEN_WIDTH == 960:
-        performance_font = pygame.font.Font(None, 24)
+        performance_font = pygame.font.SysFont(None, 24)
+        complete_font = pygame.font.SysFont(None, 48)
     elif SCREEN_WIDTH == 1280:
-        performance_font = pygame.font.Font(None, 36)
+        performance_font = pygame.font.SysFont(None, 36)
+        complete_font = pygame.font.SysFont(None, 72)
     elif SCREEN_WIDTH == 1600:
-        performance_font = pygame.font.Font(None, 48)
+        performance_font = pygame.font.SysFont(None, 48)
+        complete_font = pygame.font.SysFont(None, 96)
 
     # Exit button setup (bottom right)
     exit_width = SCREEN_WIDTH * 0.15
@@ -2558,127 +3387,178 @@ def RoR_Level():
     skip_text = skip_font.render("Skip", True, (255, 255, 255))
     skip_text_rect = skip_text.get_rect(center=skip_rect.center)
 
-
+    turbine_rotation = 0
+    water_rotation = 0
+    
     display = 190
+    power_index = 0
+    clock = pygame.time.Clock()
     running = True
 
     while running:
-        active_water_frame = water_frames[frame_index]
-        active_tube_frame = tube_frames[frame_index]
-        frame_index = (frame_index + 1) % (NUM_ROR_FRAMES-1)
-        screen.blit(statics_image, (0, 0))
-        screen.blit(active_water_frame, (int(SCREEN_WIDTH*.5256), int(SCREEN_HEIGHT*.72779)))
-        screen.blit(active_tube_frame, (1, SCREEN_HEIGHT*.3286))
-        
-        game_state['release'] = int((1 - (game_state['rotation'] / 80)) * MAX_RELEASE) + 10
-        power_generated = truncate_float(0.18 * game_state['release'],2)
-        game_state['power_data'].append(power_generated)
+        if game_state['level_complete']:
+            screen.blit(statics_image, (0,0))
 
-        graph_filename = update_RoR_graph(game_state['x_start'], game_state['x_end'], game_state['power_data'], display)
-        graph_image = load_image(graph_filename)
-        
-        display = display % (len(LOAD_CURVE)-1)
-        display += 1
+            # Draw the overlay
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+            overlay.set_alpha(200)  # Semi-transparent
+            overlay.fill((0, 0, 0))
+            screen.blit(overlay, (0, 0))
+
+            complete_text = "Level complete! Your score was:"
+            complete_label = complete_font.render(complete_text, True, (255, 255, 255))
+            score_text = f"{int(calculate_score(game_state['score']))}"
+            score_label = complete_font.render(score_text, True, (255, 255, 255))
+
+            screen.blit(complete_label, ((SCREEN_WIDTH - complete_label.get_width()) // 2, SCREEN_HEIGHT // 3))
+            screen.blit(score_label, ((SCREEN_WIDTH - score_label.get_width()) // 2, SCREEN_HEIGHT // 2))
+        else:
+            active_water_frame = water_frames[frame_index]
+            active_tube_frame = tube_frames[frame_index]
+            frame_index = (frame_index + 1) % (NUM_ROR_FRAMES-1)
+            screen.blit(statics_image, (0, 0))
+            screen.blit(active_water_frame, (int(SCREEN_WIDTH*.5256), int(SCREEN_HEIGHT*.72779)))
+            screen.blit(active_tube_frame, (1, SCREEN_HEIGHT*.3286))
             
-        scaled_graph_image = pygame.transform.scale(graph_image, (graph_width, graph_height))
-        screen.blit(graph_border, (graph_x, graph_y))
-        screen.blit(scaled_graph_image, (graph_x, graph_y))
-        if len(game_state['power_data']) > 10:
-            game_state['power_data'] = game_state['power_data'][-10:]
+            game_state['release'] = 60*game_state['rotation']
+            power_generated = truncate_float(0.001 * game_state['release'],2)
+            game_state['power_data'].append(power_generated)
 
-        game_state['x_start'] += 0.05
-        game_state['x_end'] += 0.05
+            graph_filename = update_RoR_graph(game_state['x_start'], game_state['x_end'], game_state['power_data'], display)
+            graph_image = load_image(graph_filename)
+            
+            display = display % (len(LOAD_CURVE)-1)
+            display += 1
+                
+            scaled_graph_image = pygame.transform.scale(graph_image, (graph_width, graph_height))
+            screen.blit(graph_border, (graph_x, graph_y))
+            screen.blit(scaled_graph_image, (graph_x, graph_y))
+            if len(game_state['power_data']) > 10:
+                game_state['power_data'] = game_state['power_data'][-10:]
 
-        screen.blit(scaled_panel, (0, SCREEN_HEIGHT * .8))
+            game_state['x_start'] += 0.05
+            game_state['x_end'] += 0.05
 
-        rotation_status = f"Rotation: {game_state['rotation']} degrees"
-        release_status = f"Current Release: {game_state['release']} cfs"
-        power_status = f"Power Generated: {power_generated} MW/s"
+            screen.blit(scaled_panel, (0, SCREEN_HEIGHT * .8))
 
-        screen.blit(performance_font.render(rotation_status, True, (255, 255, 255)), (SCREEN_WIDTH * 0.02, SCREEN_HEIGHT * 0.85))
-        screen.blit(performance_font.render(release_status, True, (255, 255, 255)), (SCREEN_WIDTH * 0.02, SCREEN_HEIGHT * 0.90))
-        screen.blit(performance_font.render(power_status, True, (255, 255, 255)), (SCREEN_WIDTH * 0.02, SCREEN_HEIGHT * 0.95))
+            rotation_status = f"Rotation: {game_state['rotation']} degrees"
+            release_status = f"Current Release: {game_state['release']} cfs"
+            power_status = f"Power Generated: {power_generated} MW"
 
-        up_button = pygame.transform.scale(up_active if game_state['rotation'] > 0 else up_inactive, (int(button_width), int(button_height)))
-        down_button = pygame.transform.scale(down_active if game_state['rotation'] < 80 else down_inactive, (int(button_width), int(button_height)))
+            screen.blit(performance_font.render(rotation_status, True, (255, 255, 255)), (SCREEN_WIDTH * 0.02, SCREEN_HEIGHT * 0.85))
+            screen.blit(performance_font.render(release_status, True, (255, 255, 255)), (SCREEN_WIDTH * 0.02, SCREEN_HEIGHT * 0.90))
+            screen.blit(performance_font.render(power_status, True, (255, 255, 255)), (SCREEN_WIDTH * 0.02, SCREEN_HEIGHT * 0.95))
 
-        up_button_rect = up_button.get_rect(topleft=(button_x, up_button_y))
-        down_button_rect = down_button.get_rect(topleft=(button_x, down_button_y))
+            up_button = up_active_ror if game_state['rotation'] < 90 else up_inactive_ror
+            down_button = down_active_ror if game_state['rotation'] > 10 else down_inactive_ror
 
-        screen.blit(up_button, up_button_rect.topleft)
-        screen.blit(down_button, down_button_rect.topleft)
+            up_button_rect = up_button.get_rect(topleft=(button_x, up_button_y))
+            down_button_rect = down_button.get_rect(topleft=(button_x, down_button_y))
 
-        screen.blit(scaled_frame, (frame_x, frame_y))
+            screen.blit(up_button, up_button_rect.topleft)
+            screen.blit(down_button, down_button_rect.topleft)
 
-        label_surface = performance_font.render("Wicket Gate Display", True, (255, 255, 255))
-        label_rect = label_surface.get_rect(center=(frame_x + frame_size / 2, frame_y - SCREEN_HEIGHT * 0.015))
-        screen.blit(label_surface, label_rect)
+            screen.blit(scaled_frame, (frame_x, frame_y))
 
-        # --- Draw the rotating gates ---
-        for i, (pos_x, pos_y) in enumerate(game_state['positions']):
-            rotated_image = pygame.transform.rotozoom(active_gate_image, game_state['angles'][i], 1.0)
-            rect = rotated_image.get_rect(center=(pos_x, pos_y))
-            screen.blit(rotated_image, rect.topleft)
+            label_surface = performance_font.render("Wicket Gate Display", True, (255, 255, 255))
+            label_rect = label_surface.get_rect(center=(frame_x + frame_size / 2, frame_y - SCREEN_HEIGHT * 0.015))
+            screen.blit(label_surface, label_rect)
 
-        # Draw exit button
-        screen.blit(exit_red_frame, exit_rect)
-        screen.blit(exit_text, exit_text_rect)
+            # Draw water images
+            swirled_image = pygame.transform.rotozoom(swirl_image, water_rotation, 1.0)
+            water_rotation = (water_rotation - 15*game_state['release']/5400) % 360
+            screen.blit(swirled_image, (game_state['center_x'] - swirled_image.get_width() / 2, game_state['center_y'] - swirled_image.get_height() / 2))
 
-        # Draw skip button
-        screen.blit(skip_green_frame, skip_rect)
-        screen.blit(skip_text, skip_text_rect)
+            # --- Draw the rotating gates ---
+            for i, (pos_x, pos_y) in enumerate(game_state['positions']):
+                rotated_image = pygame.transform.rotozoom(active_gate_image, game_state['angles'][i], 1.0)
+                rect = rotated_image.get_rect(center=(pos_x, pos_y))
+                screen.blit(rotated_image, rect.topleft)
 
-        
+            turbine_rotation = (turbine_rotation-20*game_state['release']/5400) % 360
+            rotated_turbine = pygame.transform.rotozoom(turbine_image, turbine_rotation, 1.0)
+            screen.blit(rotated_turbine, (game_state['center_x'] - rotated_turbine.get_width() / 2, game_state['center_y'] - rotated_turbine.get_height() / 2))
+
+            # Draw connecting lines
+            pygame.draw.line(screen, GREEN, (frame_x+frame_size, frame_y), (0.62*SCREEN_WIDTH, 0.49*SCREEN_HEIGHT))
+            pygame.draw.line(screen, GREEN, (frame_x+frame_size, frame_y+(frame_size)), (0.62*SCREEN_WIDTH, 0.49*SCREEN_HEIGHT))
+
+            # Draw exit button
+            screen.blit(exit_red_frame, exit_rect)
+            screen.blit(exit_text, exit_text_rect)
+
+            # Draw skip button
+            screen.blit(skip_green_frame, skip_rect)
+            screen.blit(skip_text, skip_text_rect)
+
+            # Score Calculation
+            load_difference = abs(power_generated - (LOAD_CURVE[(display+10)%(240)]/110))
+            power_index += 1
+            game_state['score'] += load_difference
+
+            screen.blit(performance_font.render(f"Average Power Imbalance: {(game_state['score']/power_index):.2f} MW", True, (255, 255, 255)), (SCREEN_WIDTH * 0.6, frame_y - SCREEN_HEIGHT * 0.0325))
+            screen.blit(performance_font.render(f"Total Duration: {ROR_LEVEL_DURATION} sec", True, (255, 255, 255)), (SCREEN_WIDTH * 0.3, frame_y - SCREEN_HEIGHT * 0.0325))
+            screen.blit(performance_font.render(f"Elapsed Time: {int(game_state['elapsed_time'])} sec", True, (255, 255, 255)), (SCREEN_WIDTH * 0.3, frame_y - SCREEN_HEIGHT * 0.0025))
+            game_state['elapsed_time'] += clock.tick(60) / 1000.0
+            # Check for level completion
+            if game_state['elapsed_time'] >= ROR_LEVEL_DURATION:
+                game_state['level_complete'] = True
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                save_game_data()
                 pygame.quit()
                 sys.exit()
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_UP:
-                    if game_state['rotation'] > 0:
+                    if game_state['rotation'] < 90:
                         game_state['angles'] = [angle - ROTATION_ANGLE for angle in game_state['angles']]
-                        game_state['rotation'] -= ROTATION_ANGLE
+                        game_state['rotation'] += ROTATION_ANGLE
                 elif event.key == pygame.K_DOWN:
-                    if game_state['rotation'] < 80:
+                    if game_state['rotation'] > 10:
                         game_state['angles'] = [angle + ROTATION_ANGLE for angle in game_state['angles']]
-                        game_state['rotation'] += ROTATION_ANGLE
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                mouse_x, mouse_y = pygame.mouse.get_pos()
-                if up_button_rect.collidepoint(mouse_x, mouse_y):
-                    if game_state['rotation'] > 0:
-                        game_state['angles'] = [angle - ROTATION_ANGLE for angle in game_state['angles']]
                         game_state['rotation'] -= ROTATION_ANGLE
-                elif down_button_rect.collidepoint(mouse_x, mouse_y):
-                    if game_state['rotation'] < 80:
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if game_state['level_complete']:
+                    calc_score = calculate_score(game_state['score'])
+                    if level_scores[1] < calc_score:
+                        level_scores[1] = calc_score
+                    level_completed[1] = True
+                    save_game_data()
+                    return
+                if down_button_rect.collidepoint(event.pos):
+                    if game_state['rotation'] > 10:
                         game_state['angles'] = [angle + ROTATION_ANGLE for angle in game_state['angles']]
+                        game_state['rotation'] -= ROTATION_ANGLE
+                elif up_button_rect.collidepoint(event.pos):
+                    if game_state['rotation'] < 90:
+                        game_state['angles'] = [angle - ROTATION_ANGLE for angle in game_state['angles']]
                         game_state['rotation'] += ROTATION_ANGLE
-                elif exit_rect.collidepoint(mouse_x, mouse_y):
+                elif exit_rect.collidepoint(event.pos):
                     return  # Exit this level
-                elif skip_rect.collidepoint(mouse_x, mouse_y):
+                elif skip_rect.collidepoint(event.pos):
                     level_completed[1] = True
                     return
             elif event.type == pygame.MOUSEWHEEL:
-                if event.y > 0 and game_state['rotation'] > 0:
-                    game_state['angles'] = [angle - ROTATION_ANGLE for angle in game_state['angles']]
-                    game_state['rotation'] -= ROTATION_ANGLE
-                elif event.y < 0 and game_state['rotation'] < 80:
+                if event.y < 0 and game_state['rotation'] > 10:
                     game_state['angles'] = [angle + ROTATION_ANGLE for angle in game_state['angles']]
+                    game_state['rotation'] -= ROTATION_ANGLE
+                elif event.y > 0 and game_state['rotation'] < 90:
+                    game_state['angles'] = [angle - ROTATION_ANGLE for angle in game_state['angles']]
                     game_state['rotation'] += ROTATION_ANGLE
 
         pygame.display.flip()
-        clock.tick(30)
 
 def Level2_intro():
     global selected_character, SCREEN_WIDTH, SCREEN_HEIGHT
 
     scene1_image = load_image(f"assets/Transitions/SecondEquation/{selected_character}_Second.jpg")
     scene2_image = load_image("assets/Transitions/DamGraphic.png")
-    scene3_image = load_image("assets/DamSequences/DamStatics/DamStatics.jpg")
 
     # Scale both scenes
     scene1_image = pygame.transform.smoothscale(scene1_image, (SCREEN_WIDTH, SCREEN_HEIGHT))
     scene2_image = pygame.transform.smoothscale(scene2_image, (SCREEN_WIDTH, SCREEN_HEIGHT))
-    scene3_image = pygame.transform.smoothscale(scene3_image, (SCREEN_WIDTH, SCREEN_HEIGHT))
+
     # --- Dialogue Data ---
     dialogue_scene1 = [
         ("Tom",
@@ -2691,19 +3571,219 @@ def Level2_intro():
          "Here you can see a schematic of our Dam Hydropower Plant! "
          "It demonstrates how the water flows from the reservoir through the penstock tubes to the turbines, generating electricity. "
          "The electricity generated is proportional to the flow rate 'Q' and the hydraulic head 'H', as shown here. "
-         "I'm going to take you now to our Dam Hydropower Plant, where you will be able to see these concepts in action!")
+         ),
+         ("Tom",
+          "We've developed a tool to help you visualize this relationship. Go ahead and try it out for a while, then once you're done I'll "
+          "show you our Dam Hydropower Plant!")
     ]
-    dialogue_scene3 = [
-        ("Tom",
-         "This is our Dam Hydropower Plant! You will attempt to match the electricity load curve for our city "
-         "by opening and closing the gates for each of the penstocks. You can control it with arrow keys, clicking "
-         "buttons on the control panel interface, or scrolling on your mouse! Go ahead and give it a try!")
-    ]
-    scenes = [(scene1_image,dialogue_scene1),(scene2_image,dialogue_scene2),(scene3_image,dialogue_scene3)]
+
+    scenes = [(scene1_image,dialogue_scene1),(scene2_image,dialogue_scene2)]
     run_dialogue(scenes)
 
+def Level2_intro_cont():
+    global SCREEN_WIDTH, SCREEN_HEIGHT
+
+    scene1_image = load_image("assets/DamSequences/DamStatics/DamClosed.jpg")
+
+    # Scale scene
+    scene1_image = pygame.transform.smoothscale(scene1_image, (SCREEN_WIDTH, SCREEN_HEIGHT))
+
+    # --- Dialogue Data ---
+    dialogue_scene1 = [
+        ("Tom",
+         "This is our Dam Hydropower Plant. Let's explore its main components.")
+    ]
+    scenes = [(scene1_image,dialogue_scene1)]
+    run_dialogue(scenes)
+
+def Dam_Exploration():
+    cover_image = load_image('assets/DamSequences/DamStatics/DamClosed.jpg')
+    cover_image = pygame.transform.smoothscale(cover_image, (SCREEN_WIDTH, SCREEN_HEIGHT))
+    static_image = load_image('assets/DamSequences/DamStatics/DamStatics.jpg')
+    static_image = pygame.transform.smoothscale(static_image, (SCREEN_WIDTH, SCREEN_HEIGHT))
+
+    covered = True
+
+    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.045))
+    name_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    description_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03))
+
+    exploration_directions = caption_font.render("Explore the components by clicking on them!", True, (255, 255, 255))
+
+    graph_width = (1200*screen.get_size()[0] / 1920)/2.8
+    graph_height = (900*screen.get_size()[1] / 1080)/2.8
+    graph_x = SCREEN_WIDTH - graph_width - SCREEN_WIDTH * 0.02
+    graph_y = int(SCREEN_HEIGHT * 0.05) 
+    graph_border = pygame.transform.smoothscale(border_frame, (int(graph_width*1.025), int(graph_height*1.025)))
+
+    graph_filename = update_dam_graph()
+    graph_image = load_image(graph_filename)
+    scaled_graph_image = pygame.transform.scale(graph_image, (graph_width, graph_height))
+
+    # Define the positions and radii of the 8 clickable circles
+    clickable_circles = [
+        {"name": "Load and Generation Plot", "pos": (SCREEN_WIDTH * 0.85, SCREEN_HEIGHT * 0.26), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Reservoir", "pos": (SCREEN_WIDTH * 0.15, SCREEN_HEIGHT * 0.2), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Spillway", "pos": (SCREEN_WIDTH * 0.7, SCREEN_HEIGHT * 0.205), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Dam", "pos": (SCREEN_WIDTH * 0.43, SCREEN_HEIGHT * 0.3), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Power Lines", "pos": (SCREEN_WIDTH * 0.385, SCREEN_HEIGHT * 0.8), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Generator", "pos": (SCREEN_WIDTH * 0.545, SCREEN_HEIGHT * 0.745), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Turbine", "pos": (SCREEN_WIDTH * 0.545, SCREEN_HEIGHT * 0.79), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Control Gate", "pos": (SCREEN_WIDTH * 0.5, SCREEN_HEIGHT * 0.48), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Penstock", "pos": (SCREEN_WIDTH * 0.578, SCREEN_HEIGHT * 0.6), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Tail Race", "pos": (SCREEN_WIDTH * 0.7, SCREEN_HEIGHT * 0.8), "radius": SCREEN_WIDTH * 0.01}
+    ]
+
+    component_descriptions = {
+        "Load and Generation Plot": "This plot shows the load demand and generation over time.",
+        "Turbine": "Converts the kinetic energy of water into mechanical energy.",
+        "Reservoir": "Stores water for the system. When the reservoir reaches 'dead pool', the water can no longer flow downstream.",
+        "Generator": "Converts mechanical energy into electrical energy.",
+        "Control Gate": "Regulates the flow of water in the system.",
+        "Tail Race": "The channel that carries water away from the turbine.",
+        "Penstock": "The pipe that delivers water to the turbine.",
+        "Power Lines": "Transport electricity from the generator to the grid.",
+        "Dam": "Holds back water to create a reservoir.",
+        "Spillway": "Allows excess water to flow out of the reservoir."
+    }
+
+    # Text box setup
+    text_box_width = SCREEN_WIDTH * 0.75
+    text_box_height = SCREEN_HEIGHT * 0.15
+    text_box_x = SCREEN_WIDTH * 0.02
+    text_box_y = SCREEN_HEIGHT - text_box_height - SCREEN_HEIGHT * 0.02
+    text_box_frame = pygame.transform.smoothscale(border_frame, (int(text_box_width), int(text_box_height)))
+
+    # Variables to store the most recently clicked item's name and description
+    clicked_name = ""
+    clicked_description = ""
+    clicked_circle = None  # Track the currently clicked circle
+
+    # Continue button setup
+    Continue_width = SCREEN_WIDTH * 0.15
+    Continue_height = SCREEN_HEIGHT * 0.06
+    Continue_rect = pygame.Rect(SCREEN_WIDTH - Continue_width - SCREEN_WIDTH * 0.02,
+                            SCREEN_HEIGHT - Continue_height - SCREEN_HEIGHT * 0.02,
+                            Continue_width, Continue_height)
+    Continue_frame = pygame.transform.smoothscale(border_frame, (int(Continue_width), int(Continue_height)))
+    Continue_green_frame = tint_surface(Continue_frame, (0, 200, 0))
+    Continue_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    Continue_text = Continue_font.render("Continue", True, (255, 255, 255))
+    Continue_text_rect = Continue_text.get_rect(center=Continue_rect.center)
+
+    i = 255
+    has_clicked = False
+    running = True
+    while running:
+        if covered:
+            screen.blit(static_image, (0, 0))
+            screen.blit(cover_image, (0, 0))
+            cover_image.set_alpha(i)
+            i -= 2
+            if i <= 0:
+                covered = False
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    save_game_data()
+                    pygame.quit()
+                    sys.exit()
+        else:
+            screen.blit(static_image, (0, 0))
+            screen.blit(exploration_directions, (SCREEN_WIDTH / 2 - exploration_directions.get_width() / 2, SCREEN_HEIGHT * 0.07))
+            screen.blit(graph_border, (graph_x, graph_y))
+            screen.blit(scaled_graph_image, (graph_x, graph_y))
+
+            # Draw the clickable circles with hover and click effects
+            mouse_pos = pygame.mouse.get_pos()
+            for circle in clickable_circles:
+                distance = ((mouse_pos[0] - circle["pos"][0]) ** 2 + (mouse_pos[1] - circle["pos"][1]) ** 2) ** 0.5
+                if circle == clicked_circle:  # Click effect
+                    pygame.draw.circle(screen, (0, 255, 0), circle["pos"], circle["radius"]*1.2)  # Green Fill
+                elif distance <= circle["radius"]:  # Hover effect
+                    pygame.draw.circle(screen, (0, 255, 0), circle["pos"], circle["radius"])  # Semi-transparent fill
+                else:
+                    pygame.draw.circle(screen, (0, 255, 0), circle["pos"], circle["radius"], 2)  # Default outline
+
+            # Draw the text box
+            if has_clicked:
+                screen.blit(text_box_frame, (text_box_x, text_box_y))
+                name_text = name_font.render(f"{clicked_name}", True, (255, 255, 255))
+                description_text = description_font.render(f"{clicked_description}", True, (255, 255, 255))
+                screen.blit(name_text, (text_box_x + SCREEN_WIDTH * 0.01, text_box_y + SCREEN_HEIGHT * 0.01))
+                screen.blit(description_text, (text_box_x + SCREEN_WIDTH * 0.01, text_box_y + SCREEN_HEIGHT * 0.05))
+
+            # Draw Continue button
+            screen.blit(Continue_green_frame, Continue_rect)
+            screen.blit(Continue_text, Continue_text_rect)
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    save_game_data()
+                    pygame.quit()
+                    sys.exit()
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    for circle in clickable_circles:
+                        distance = ((mouse_pos[0] - circle["pos"][0]) ** 2 + (mouse_pos[1] - circle["pos"][1]) ** 2) ** 0.5
+                        if distance <= circle["radius"]:
+                            clicked_name = circle["name"]
+                            clicked_description = component_descriptions[clicked_name]
+                            clicked_circle = circle  # Update the clicked circle
+                            has_clicked = True
+                    if Continue_rect.collidepoint(mouse_pos):
+                        return  # Continue to the next part
+                else:
+                    clicked_circle = None
+        pygame.display.flip()
+        clock.tick(60)
+
+def Dam_Controls():
+    show_pressed_keys = True
+    show_blinking_rect = True
+    blink_timer = 0
+    blink_interval = 500
+
+    # Continue button setup
+    Continue_width = SCREEN_WIDTH * 0.15
+    Continue_height = SCREEN_HEIGHT * 0.06
+    Continue_rect = pygame.Rect(SCREEN_WIDTH - Continue_width - SCREEN_WIDTH * 0.02,
+                            SCREEN_HEIGHT - Continue_height - SCREEN_HEIGHT * 0.02,
+                            Continue_width, Continue_height)
+    Continue_frame = pygame.transform.smoothscale(border_frame, (int(Continue_width), int(Continue_height)))
+    Continue_green_frame = tint_surface(Continue_frame, (0, 200, 0))
+    Continue_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    Continue_text = Continue_font.render("Continue", True, (255, 255, 255))
+    Continue_text_rect = Continue_text.get_rect(center=Continue_rect.center)
+
+    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.045))
+    loading_text = caption_font.render("Loading...", True, (255, 255, 255))
+
+    clock = pygame.time.Clock()
+    running = True
+    while running:
+        blink_timer += clock.get_time()
+        if blink_timer >= blink_interval:
+            show_pressed_keys = not show_pressed_keys
+            show_blinking_rect = not show_blinking_rect
+            blink_timer = 0
+
+        draw_controls_page_dam(screen, show_pressed_keys, show_blinking_rect)
+        screen.blit(Continue_green_frame, Continue_rect)
+        screen.blit(Continue_text, Continue_text_rect)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                save_game_data()
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if Continue_rect.collidepoint(event.pos):
+                    screen.blit(loading_text, (SCREEN_WIDTH / 2 - loading_text.get_width() / 2, SCREEN_HEIGHT / 2 - loading_text.get_height() / 2))
+                    pygame.display.flip()
+                    return  # Continue to the next part
+        pygame.display.flip()
+        clock.tick(60)
+
 def Dam_Level():
-    global SCREEN_WIDTH, SCREEN_HEIGHT, border_frame, level_completed
+    global SCREEN_WIDTH, SCREEN_HEIGHT, border_frame, level_completed, level_scores
     global control_panel, up_active, up_inactive, down_active, down_inactive
     spillway_index = 0
     spillway_frames = load_dam_frames(NUM_SPILLWAY_FRAMES, SPILLWAY_PATH_TEMPLATE)
@@ -2766,6 +3846,11 @@ def Dam_Level():
     up_button_y = SCREEN_HEIGHT * 0.83
     down_button_y = SCREEN_HEIGHT * 0.93
 
+    up_active_image = pygame.transform.smoothscale(up_active_image, (int(button_width), int(button_height)))
+    up_inactive_image = pygame.transform.smoothscale(up_inactive_image, (int(button_width), int(button_height)))
+    down_active_image = pygame.transform.smoothscale(down_active_image, (int(button_width), int(button_height)))
+    down_inactive_image = pygame.transform.smoothscale(down_inactive_image, (int(button_width), int(button_height)))
+
     up_button_rect = pygame.Rect(button_x, up_button_y, button_width, button_height)
     down_button_rect = pygame.Rect(button_x, down_button_y, button_width, button_height)
 
@@ -2780,12 +3865,17 @@ def Dam_Level():
     scaled_panel = pygame.transform.smoothscale(control_panel_image, (panel_width, panel_height))
     panel_x = 0
     panel_y = int(SCREEN_HEIGHT * 0.8)
+    orange_panel = tint_surface(scaled_panel, (255, 100, 0))
+    orange_panel.set_alpha(127)
+    red_panel = tint_surface(scaled_panel, (255, 0, 0))
+    red_panel.set_alpha(127)
+    scaled_panel.set_alpha(127)
 
     # Set the font size relative to control panel height
     panel_font_size = int(panel_height * 0.15)
-    panel_font = pygame.font.Font(None, panel_font_size)
+    panel_font = pygame.font.SysFont(None, panel_font_size)
 
-    water_level_text = "Upper Reservoir Water Level"
+    water_level_text = "Reservoir Water Level"
 
     level_surface = panel_font.render(water_level_text, True, (255, 255, 255))
 
@@ -2819,7 +3909,7 @@ def Dam_Level():
 
     # Load electricity image
     light_image = load_image("assets/Light.png")
-    light_image = pygame.transform.smoothscale(light_image, (light_image.get_size()[0]*0.05,light_image.get_size()[1]*0.05))
+    light_image = pygame.transform.smoothscale(light_image, (light_image.get_size()[0]*0.05*(SCREEN_WIDTH/1280),light_image.get_size()[1]*0.05*(SCREEN_HEIGHT/720)))
     # Define light animation positions
     light_positions = [
         (SCREEN_WIDTH*0.444, SCREEN_HEIGHT*0.71),
@@ -3001,20 +4091,24 @@ def Dam_Level():
 
 
     if SCREEN_WIDTH == 960:
-        performance_font = pygame.font.Font(None, 24)
-    elif SCREEN_WIDTH == 1280:
-        performance_font = pygame.font.Font(None, 36)
-    elif SCREEN_WIDTH == 1600:
-        performance_font = pygame.font.Font(None, 48)
-
-    if SCREEN_WIDTH == 960:
+        performance_font = pygame.font.SysFont(None, 24)
         complete_font = pygame.font.SysFont(None, 48)
+        warning_font = pygame.font.SysFont(None, 24, bold=True)
     elif SCREEN_WIDTH == 1280:
+        performance_font = pygame.font.SysFont(None, 36)
         complete_font = pygame.font.SysFont(None, 72)
+        warning_font = pygame.font.SysFont(None, 36, bold=True)
     elif SCREEN_WIDTH == 1600:
+        performance_font = pygame.font.SysFont(None, 48)
         complete_font = pygame.font.SysFont(None, 96)
+        warning_font = pygame.font.SysFont(None, 48, bold=True)
+
+    heatmap_frame = pygame.transform.smoothscale(border_frame, (SCREEN_WIDTH*0.25, SCREEN_HEIGHT*0.35))
+    scaled_score = 0
 
     display = 0
+    power_info_counter = 0
+    first_run = True
     running = True
     while running:
         if game_state['level_complete']:
@@ -3028,17 +4122,17 @@ def Dam_Level():
 
             complete_text = "Level complete! Your score was:"
             complete_label = complete_font.render(complete_text, True, (255, 255, 255))
-            score_text = f"{int(game_state['score'])}"
+            score_text = f"{int(calculate_score((game_state['score']), (game_state['wasted_water']), factor=7000))}"
             score_label = complete_font.render(score_text, True, (255, 255, 255))
 
             screen.blit(complete_label, ((SCREEN_WIDTH - complete_label.get_width()) // 2, SCREEN_HEIGHT // 3))
             screen.blit(score_label, ((SCREEN_WIDTH - score_label.get_width()) // 2, SCREEN_HEIGHT // 2))
         else:
-            delta_time = clock.tick(30) / 1000.0
+            delta_time = clock.tick(60) / 1000.0
             # Update elapsed time
             game_state['elapsed_time'] += delta_time
             # Check for level completion
-            if game_state['elapsed_time'] >= LEVEL_DURATION:
+            if game_state['elapsed_time'] >= DAM_LEVEL_DURATION:
                 game_state['level_complete'] = True
             # Calculate the number of open gates
             open_gates = sum(game_state['gates'])
@@ -3050,7 +4144,7 @@ def Dam_Level():
                 game_state['water_volume'] = max(0, game_state['water_volume'] + (game_state['intake_rate'] - game_state['active_outer_flow']) * delta_time)
             elif game_state['water_level'] >= MAX_WATER_LEVEL and game_state['active_outer_flow']<game_state['intake_rate']:
                 game_state['spillway_rate'] = game_state['intake_rate'] - game_state['active_outer_flow']
-                game_state['water_volume'] = MAX_WATER_LEVEL ** 2
+                game_state['water_volume'] = ((MAX_WATER_LEVEL) ** 2)*2
             elif game_state['water_level'] >= MAX_WATER_LEVEL:
                 game_state['spillway_rate'] = 0
                 game_state['water_volume'] = game_state['water_volume'] + (game_state['intake_rate'] - game_state['active_outer_flow']) * delta_time
@@ -3062,8 +4156,7 @@ def Dam_Level():
                 game_state['spillway_rate'] = 0
                 game_state['water_volume'] = max(0, game_state['water_volume'] + game_state['intake_rate'] * delta_time)
 
-            #assume vol to elevation function by interpolation of set of points
-            game_state['water_level'] = np.sqrt(game_state['water_volume'])
+            game_state['water_level'] = volume_to_elevation(game_state['water_volume'],0.5,0)
 
             bar_index = int((game_state['water_level']/MAX_WATER_LEVEL)*100)
             bar_index = min(100,bar_index)
@@ -3073,8 +4166,9 @@ def Dam_Level():
             game_state['wasted_water'] = game_state['wasted_water']+(game_state['spillway_rate']*delta_time)
 
             # Calculate power generated
-            power_generated = 9 * (game_state['water_level']) * game_state['active_outer_flow']
+            power_generated = 4.3 * (game_state['water_level']) * game_state['active_outer_flow']
             game_state['power_data'].append(power_generated)
+            power_info_counter += 1
 
             
             screen.blit(static_background_image, (0, 0))
@@ -3151,7 +4245,7 @@ def Dam_Level():
                 screen.blit(light_image, light2_positions[light10_index])
 
             if game_state['gates'][1] == 0:
-                screen.blit(closed_gate2_image, (int(SCREEN_WIDTH * 0.4744), int(SCREEN_HEIGHT * 0.3767)))
+                screen.blit(closed_gate2_image, (int(SCREEN_WIDTH * 0.475), int(SCREEN_HEIGHT * 0.3767)))
                 screen.blit(flow2_frames[36], (int(SCREEN_WIDTH * 0.6131), int(SCREEN_HEIGHT * 0.8406)))
                 screen.blit(turbine2_frames[turbine2_index], (int(SCREEN_WIDTH * 0.564), int(SCREEN_HEIGHT * 0.6714)))
                 light11_index = 0
@@ -3160,7 +4254,7 @@ def Dam_Level():
                 light14_index = 12
                 light15_index = 16
             else:
-                screen.blit(open_gate2_image, (int(SCREEN_WIDTH * 0.4744), int(SCREEN_HEIGHT * 0.3767)))
+                screen.blit(open_gate2_image, (int(SCREEN_WIDTH * 0.475), int(SCREEN_HEIGHT * 0.3767)))
                 screen.blit(flow2_frames[flow2_index], (int(SCREEN_WIDTH * 0.6131), int(SCREEN_HEIGHT * 0.8406)))
                 flow2_index += 1
                 flow2_index = flow2_index % 35
@@ -3212,7 +4306,7 @@ def Dam_Level():
 
             display = display % (len(LOAD_CURVE)-1)
             display += 1
-            
+
             scaled_graph_image = pygame.transform.scale(graph_image, (graph_width, graph_height))
             screen.blit(graph_border, (graph_x, graph_y))
             screen.blit(scaled_graph_image, (graph_x, graph_y))
@@ -3227,53 +4321,65 @@ def Dam_Level():
 
             # Display the water wasted
 
-            waste_status = f"Average Water Wasted: {(game_state['wasted_water']/game_state['elapsed_time']):.2f} cfs"
+            waste_status = f"Average Water Spilled: {int(2000*(game_state['wasted_water']/game_state['elapsed_time']))} cfs"
             waste_label = performance_font.render(waste_status, True, (255, 255, 255))
-            screen.blit(waste_label, (SCREEN_WIDTH - waste_label.get_width() - SCREEN_WIDTH*0.0125, SCREEN_HEIGHT*0.0167))
+            screen.blit(waste_label, (SCREEN_WIDTH - waste_label.get_width(), SCREEN_HEIGHT*0.0167))
 
             # Display elapsed time
             time_status = f"Time Elapsed: {int(game_state['elapsed_time'])} sec"
-            time_max = f"Total Duration: {LEVEL_DURATION} sec"
+            time_max = f"Total Duration: {DAM_LEVEL_DURATION} sec"
             time_label = performance_font.render(time_status, True, (255, 255, 255))
             max_label = performance_font.render(time_max, True, (255, 255, 255))
             screen.blit(time_label, (SCREEN_WIDTH*0.0125, SCREEN_HEIGHT*0.0167))
             screen.blit(max_label, (SCREEN_WIDTH*0.0125, SCREEN_HEIGHT*0.0567))
 
             # Calculate the load difference
-            load_difference = truncate_float(power_generated - ((LOAD_CURVE[display]/6)-9.5), 2)
+            load_difference = truncate_float(power_generated - ((LOAD_CURVE[(display+10)%240]/6)-15), 2)
+            # We did a massive rescaling of the visible values so this line fixes that, delete if any functional retooling is done
+            scaled_load_difference = 0.14 * bar_index * truncate_float(power_generated - ((LOAD_CURVE[(display+10)%240]/6)-15), 2) / 4.3 / game_state['water_level']
 
             # Render the load difference text
-            performance_text = f"Load Difference: {load_difference} MW"
+            performance_text = f"Real-Time Power Imbalance: {scaled_load_difference:.2f} MW"
             performance_label = performance_font.render(performance_text, True, (255, 255, 255))
 
             # Calculate the position to center the text at the top of the screen
-            performance_x = (SCREEN_WIDTH - performance_label.get_width()) // 2
-            performance_y = SCREEN_HEIGHT*0.0167  # Adjust the y-position as needed
+            if first_run:
+                performance_x = (SCREEN_WIDTH - performance_label.get_width()) // 2
+                performance_y = SCREEN_HEIGHT*0.0167  # Adjust the y-position as needed
 
             # Blit the performance label to the screen
-            #screen.blit(performance_label, (performance_x, performance_y))
-            abs_load_difference = abs(load_difference)
+            screen.blit(performance_label, (performance_x, performance_y))
 
             # Update the score
-            game_state['score'] += abs_load_difference
+            game_state['score'] += abs(load_difference)
+            # Update the scaled difference without numerical back end changes
+            scaled_score += abs(scaled_load_difference)
 
             # Render the score text
-            score_text = f"Average Power Imbalance: {int(game_state['score']/max(game_state['elapsed_time'],1))} MW"
+            score_text = f"Average Power Imbalance: {(scaled_score/power_info_counter):.2f} MW"
             score_label = performance_font.render(score_text, True, (255, 255, 255))
 
             # Calculate the position to display the score
-            score_x = (SCREEN_WIDTH - score_label.get_width()) // 2
-            score_y = performance_y + performance_label.get_height() + SCREEN_HEIGHT*0.0167  # Position below the load difference
+            if first_run:
+                score_x = (SCREEN_WIDTH - score_label.get_width()) // 2
+                score_y = performance_y + performance_label.get_height() + SCREEN_HEIGHT*0.0167  # Position below the load difference
 
             # Blit the score label to the screen
-            #screen.blit(score_label, (score_x, score_y))
+            screen.blit(score_label, (score_x, score_y))
             
             # Draw the control panel
-            screen.blit(scaled_panel, (panel_x, panel_y))
+            if game_state['water_level'] == 0:
+                screen.blit(red_panel, (panel_x, panel_y))
+                screen.blit(warning_font.render("Warning: The reservoir has reached dead pool!", True, (255, 255, 255)), (SCREEN_WIDTH * 0.02, SCREEN_HEIGHT * 0.75))
+            elif game_state['spillway_rate'] > 0:
+                screen.blit(orange_panel, (panel_x, panel_y))
+                screen.blit(warning_font.render("Warning: Water is being spilled!", True, (255, 255, 255)), (SCREEN_WIDTH * 0.02, SCREEN_HEIGHT * 0.75))
+            else:
+                screen.blit(scaled_panel, (panel_x, panel_y))
 
             # Prepare the lines
-            outer_flow_text = f"Outer Flow: {game_state['active_outer_flow']:.2f} cfs"
-            power_text = f"Power Generated: {power_generated:.2f} MW/s"  # Swapped order
+            outer_flow_text = f"Turbine Flow: {2000*int(game_state['active_outer_flow'])} cfs"
+            power_text = f"Power Generated: {(0.14*int(game_state['active_outer_flow']) * bar_index):.2f} MW"  # Swapped order
             open_gates_text = f"Open Gates: {open_gates}"
 
             left_panel_lines = [outer_flow_text, power_text, open_gates_text]
@@ -3284,7 +4390,8 @@ def Dam_Level():
             # Draw left column of text
             for i, line in enumerate(left_panel_lines):
                 text_surface = panel_font.render(line, True, (255, 255, 255))
-                text_x = panel_x + panel_width * 0.05  # Left margin
+                if first_run:
+                    text_x = panel_x + panel_width * 0.05  # Left margin
                 text_y = panel_y + left_spacing * (i + 1) + SCREEN_HEIGHT*0.01
                 screen.blit(text_surface, (text_x, text_y))
 
@@ -3304,7 +4411,7 @@ def Dam_Level():
                 x = start_x + i * (square_size + spacing_between_squares)
                 screen.blit(gate_surface, (x, start_y))
 
-            screen.blit(bar_image, (int(SCREEN_WIDTH * 0.315), int(SCREEN_HEIGHT * 0.83)))
+            screen.blit(bar_image, (int(SCREEN_WIDTH * 0.292), int(SCREEN_HEIGHT * 0.83)))
 
             # Decide whether buttons should be active
             all_open = all(g == 1 for g in game_state['gates'])
@@ -3314,11 +4421,8 @@ def Dam_Level():
             down_image = down_inactive_image if all_closed else down_active_image
 
             # Scale and draw buttons
-            up_scaled = pygame.transform.scale(up_image, (int(button_width), int(button_height)))
-            down_scaled = pygame.transform.scale(down_image, (int(button_width), int(button_height)))
-
-            screen.blit(up_scaled, up_button_rect.topleft)
-            screen.blit(down_scaled, down_button_rect.topleft)
+            screen.blit(up_image, up_button_rect.topleft)
+            screen.blit(down_image, down_button_rect.topleft)
 
             # Draw exit button
             screen.blit(exit_red_frame, exit_rect)
@@ -3328,12 +4432,29 @@ def Dam_Level():
             screen.blit(skip_green_frame, skip_rect)
             screen.blit(skip_text, skip_text_rect)
 
+            if first_run:
+                dam_heatmap = draw_dam_colormap(game_state['active_outer_flow'], bar_index)
+            else:
+                dam_heatmap = update_dam_colormap(game_state['active_outer_flow'], bar_index)
+            heatmap_rect = dam_heatmap.get_rect(center=(SCREEN_WIDTH// 7, int(0.57 * SCREEN_HEIGHT)))
+            if SCREEN_WIDTH == 960:
+                screen.blit(heatmap_frame, (heatmap_rect.x - heatmap_frame.get_width()//2 + dam_heatmap.get_width()//2 - SCREEN_WIDTH*.0025, heatmap_rect.y - heatmap_frame.get_height()//2 + dam_heatmap.get_height()//2))
+            elif SCREEN_WIDTH == 1280:
+                screen.blit(heatmap_frame, (heatmap_rect.x - heatmap_frame.get_width()//2 + dam_heatmap.get_width()//2 - SCREEN_WIDTH*.0075, heatmap_rect.y - heatmap_frame.get_height()//2 + dam_heatmap.get_height()//2))
+            else:
+                screen.blit(heatmap_frame, (heatmap_rect.x - heatmap_frame.get_width()//2 + dam_heatmap.get_width()//2 - SCREEN_WIDTH*.01, heatmap_rect.y - heatmap_frame.get_height()//2 + dam_heatmap.get_height()//2 - SCREEN_HEIGHT*.01))
+            screen.blit(dam_heatmap, heatmap_rect)
+            
+
+            if first_run:
+                first_run = False
             # Clean up the temporary file
             os.remove(graph_filename)
 
         
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                save_game_data()
                 pygame.quit()
                 sys.exit()
             elif event.type == pygame.KEYDOWN:
@@ -3349,7 +4470,11 @@ def Dam_Level():
                             break
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if game_state['level_complete']:
+                    calc_score = calculate_score(game_state['score'], game_state['wasted_water'], factor=7000)
+                    if level_scores[2] < calc_score:
+                        level_scores[2] = calc_score
                     level_completed[2] = True
+                    save_game_data()
                     return
                 if up_button_rect.collidepoint(event.pos):
                     for i in range(len(game_state['gates'])):
@@ -3424,8 +4549,190 @@ def Level3_intro():
     scenes = [(scene1_image,dialogue_scene1),(scene2_image,dialogue_scene2),(scene3_image,dialogue_scene3),(scene4_image,dialogue_scene4)]
     run_dialogue(scenes)
 
+def PSH_Exploration():
+    static_background_image = load_image('assets/PSHSequences/PSHStatics/PSHStatics.jpg')
+    static_background_image = pygame.transform.scale(static_background_image, (static_background_image.get_width() * SCREEN_WIDTH / 1920, static_background_image.get_height() * SCREEN_HEIGHT / 1080))
+    upper_reservoir_image = load_image('assets/PSHSequences/PSHStatics/UpperReservoirStatics.jpg')
+    upper_reservoir_image = pygame.transform.scale(upper_reservoir_image, ((upper_reservoir_image.get_width() * SCREEN_WIDTH / 1920)/2.5, (upper_reservoir_image.get_height() * SCREEN_HEIGHT / 1080)/2.5))
+
+    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.045))
+    name_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    description_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03))
+
+    exploration_directions = caption_font.render("Explore the components by clicking on them!", True, (255, 255, 255))
+
+    # PSH Upper Reservoir Frame Positioning (LEFT)
+    upper_edge_y = int(SCREEN_HEIGHT * 0.08)
+    left_edge_x = int(SCREEN_WIDTH * 0.01)
+    border_width = upper_reservoir_image.get_width()*1.005
+    border_height = upper_reservoir_image.get_height()*1.013
+    border_x = left_edge_x*0.975
+    border_y = upper_edge_y*0.975
+
+    scaled_border = pygame.transform.smoothscale(border_frame, (border_width, border_height))
+
+    graph_width = (1200*screen.get_size()[0] / 1920)/2.8
+    graph_height = (900*screen.get_size()[1] / 1080)/2.8
+    graph_x = SCREEN_WIDTH - graph_width - SCREEN_WIDTH * 0.01
+    graph_y = int(SCREEN_HEIGHT * 0.1) 
+    graph_border = pygame.transform.smoothscale(border_frame, (int(graph_width*1.025), int(graph_height*1.025)))
+
+    graph_filename = update_psh_graph()
+    graph_image = load_image(graph_filename)
+    scaled_graph_image = pygame.transform.scale(graph_image, (graph_width, graph_height))
+
+    # Define the positions and radii of the 9 clickable circles
+    clickable_circles = [
+        {"name": "Load and Generation Plot", "pos": (SCREEN_WIDTH * 0.85, SCREEN_HEIGHT * 0.25), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Upper Reservoir", "pos": (SCREEN_WIDTH * 0.136, SCREEN_HEIGHT * 0.255), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Lower Reservoir", "pos": (SCREEN_WIDTH * 0.95, SCREEN_HEIGHT * 0.6), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Turbine Feed Pipes", "pos": (SCREEN_WIDTH * 0.325, SCREEN_HEIGHT * 0.6), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Generator", "pos": (SCREEN_WIDTH * 0.5425, SCREEN_HEIGHT * 0.61), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Turbine", "pos": (SCREEN_WIDTH * 0.5425, SCREEN_HEIGHT * 0.71), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Valves", "pos": (SCREEN_WIDTH * 0.475, SCREEN_HEIGHT * 0.69), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Frequency Converter", "pos": (SCREEN_WIDTH * 0.435, SCREEN_HEIGHT * 0.61), "radius": SCREEN_WIDTH * 0.01},
+        {"name": "Step-up Transformer", "pos": (SCREEN_WIDTH * 0.53, SCREEN_HEIGHT * 0.49), "radius": SCREEN_WIDTH * 0.01}
+    ]
+
+    component_descriptions = {
+        "Load and Generation Plot": "Shows the electricity demand of the city (white) and the power generated by the PSH plant (red).",
+        "Upper Reservoir": "Stores water that can be released to generate electricity.",
+        "Lower Reservoir": "Collects water that has been released from the upper reservoir.",
+        "Turbine Feed Pipes": "Carries water from the upper reservoir down to the turbine.",
+        "Generator": "Converts mechanical energy from the turbine into electrical energy that can be sent to the grid.",
+        "Turbine": "Is turned by the flow of water from the upper reservoir to generate electricity.",
+        "Valves": "Controls the flow of water between the reservoirs and through the turbine.",
+        "Frequency Converter": "Matches the frequency of the electricity generated by the plant to the grid frequency.",
+        "Step-up Transformer": "Increases the voltage of generated electricity so it can be transmitted over long distances through power lines."
+    }
+
+    # Text box setup
+    text_box_width = SCREEN_WIDTH * 0.75
+    text_box_height = SCREEN_HEIGHT * 0.15
+    text_box_x = SCREEN_WIDTH * 0.02
+    text_box_y = SCREEN_HEIGHT - text_box_height - SCREEN_HEIGHT * 0.02
+    text_box_frame = pygame.transform.smoothscale(border_frame, (int(text_box_width), int(text_box_height)))
+
+    # Variables to store the most recently clicked item's name and description
+    clicked_name = ""
+    clicked_description = ""
+    clicked_circle = None  # Track the currently clicked circle
+
+    # Continue button setup
+    Continue_width = SCREEN_WIDTH * 0.15
+    Continue_height = SCREEN_HEIGHT * 0.06
+    Continue_rect = pygame.Rect(SCREEN_WIDTH - Continue_width - SCREEN_WIDTH * 0.02,
+                            SCREEN_HEIGHT - Continue_height - SCREEN_HEIGHT * 0.02,
+                            Continue_width, Continue_height)
+    Continue_frame = pygame.transform.smoothscale(border_frame, (int(Continue_width), int(Continue_height)))
+    Continue_green_frame = tint_surface(Continue_frame, (0, 200, 0))
+    Continue_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    Continue_text = Continue_font.render("Continue", True, (255, 255, 255))
+    Continue_text_rect = Continue_text.get_rect(center=Continue_rect.center)
+
+    has_clicked = False  # Track if any circle has been clicked
+    running = True
+    while running:
+        screen.blit(static_background_image, (0, 0))
+        screen.blit(scaled_border, (border_x, border_y))
+        screen.blit(upper_reservoir_image, (left_edge_x, upper_edge_y))
+        screen.blit(exploration_directions, (SCREEN_WIDTH / 2 - exploration_directions.get_width() / 2, SCREEN_HEIGHT * 0.02))
+        screen.blit(graph_border, (graph_x, graph_y))
+        screen.blit(scaled_graph_image, (graph_x, graph_y))
+
+        # Draw the clickable circles with hover and click effects
+        mouse_pos = pygame.mouse.get_pos()
+        for circle in clickable_circles:
+            distance = ((mouse_pos[0] - circle["pos"][0]) ** 2 + (mouse_pos[1] - circle["pos"][1]) ** 2) ** 0.5
+            if circle == clicked_circle:  # Click effect
+                pygame.draw.circle(screen, (0, 255, 0), circle["pos"], circle["radius"]*1.2)  # Green Fill
+            elif distance <= circle["radius"]:  # Hover effect
+                pygame.draw.circle(screen, (0, 255, 0), circle["pos"], circle["radius"])  # Semi-transparent fill
+            else:
+                pygame.draw.circle(screen, (0, 255, 0), circle["pos"], circle["radius"], 2)  # Default outline
+
+        # Draw the text box
+        if has_clicked:
+            screen.blit(text_box_frame, (text_box_x, text_box_y))
+            name_text = name_font.render(f"{clicked_name}", True, (255, 255, 255))
+            description_text = description_font.render(f"{clicked_description}", True, (255, 255, 255))
+            screen.blit(name_text, (text_box_x + SCREEN_WIDTH * 0.01, text_box_y + SCREEN_HEIGHT * 0.01))
+            screen.blit(description_text, (text_box_x + SCREEN_WIDTH * 0.01, text_box_y + SCREEN_HEIGHT * 0.05))
+
+        # Draw Continue button
+        screen.blit(Continue_green_frame, Continue_rect)
+        screen.blit(Continue_text, Continue_text_rect)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                save_game_data()
+                pygame.quit()
+                sys.exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                for circle in clickable_circles:
+                    distance = ((mouse_pos[0] - circle["pos"][0]) ** 2 + (mouse_pos[1] - circle["pos"][1]) ** 2) ** 0.5
+                    if distance <= circle["radius"]:
+                        clicked_name = circle["name"]
+                        clicked_description = component_descriptions[clicked_name]
+                        clicked_circle = circle  # Update the clicked circle
+                        has_clicked = True
+                if Continue_rect.collidepoint(mouse_pos):
+                    return  # Continue to the next part
+            else:
+                clicked_circle = None
+
+        pygame.display.flip()
+        clock.tick(60)
+
+def PSH_Controls():
+    show_pressed_keys = True
+    show_blinking_rect = True
+    blink_timer = 0
+    blink_interval = 500
+
+    # Continue button setup
+    Continue_width = SCREEN_WIDTH * 0.15
+    Continue_height = SCREEN_HEIGHT * 0.06
+    Continue_rect = pygame.Rect(SCREEN_WIDTH - Continue_width - SCREEN_WIDTH * 0.02,
+                            SCREEN_HEIGHT - Continue_height - SCREEN_HEIGHT * 0.02,
+                            Continue_width, Continue_height)
+    Continue_frame = pygame.transform.smoothscale(border_frame, (int(Continue_width), int(Continue_height)))
+    Continue_green_frame = tint_surface(Continue_frame, (0, 200, 0))
+    Continue_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    Continue_text = Continue_font.render("Continue", True, (255, 255, 255))
+    Continue_text_rect = Continue_text.get_rect(center=Continue_rect.center)
+
+    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.045))
+    loading_text = caption_font.render("Loading...", True, (255, 255, 255))
+
+    clock = pygame.time.Clock()
+    running = True
+    while running:
+        blink_timer += clock.get_time()
+        if blink_timer >= blink_interval:
+            show_pressed_keys = not show_pressed_keys
+            show_blinking_rect = not show_blinking_rect
+            blink_timer = 0
+
+        draw_controls_page_PSH(screen, show_pressed_keys, show_blinking_rect)
+        # Draw Continue button
+        screen.blit(Continue_green_frame, Continue_rect)
+        screen.blit(Continue_text, Continue_text_rect)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                save_game_data()
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if Continue_rect.collidepoint(event.pos):
+                    screen.blit(loading_text, (SCREEN_WIDTH / 2 - loading_text.get_width() / 2, SCREEN_HEIGHT / 2 - loading_text.get_height() / 2))
+                    pygame.display.flip()
+                    return  # Continue to the next part
+        pygame.display.flip()
+        clock.tick(60)
+
 def PSH_Level():
-    global SCREEN_WIDTH, SCREEN_HEIGHT, border_frame, level_completed
+    global SCREEN_WIDTH, SCREEN_HEIGHT, border_frame, level_completed, level_scores
     global control_panel, up_active, up_inactive, down_active, down_inactive
     frames = load_psh_frames(NUM_PSH_FRAMES, PSH_PATH_TEMPLATE)
     turbine_frames = load_psh_frames(POWERHOUSE_NUM_FRAMES, POWERHOUSE_PATH_TEMPLATE)
@@ -3443,18 +4750,15 @@ def PSH_Level():
     border_frame_image = load_image('assets/IKM_Assets/BorderFrame.png')
     control_panel_image = load_image('assets/IKM_Assets/ControlPanel.png')
 
-
-    up_active_image = load_image('assets/IKM_Assets/UpButtonActive.png')
-    up_inactive_image = load_image('assets/IKM_Assets/UpButtonInactive.png')
-    down_active_image = load_image('assets/IKM_Assets/DownButtonActive.png')
-    down_inactive_image = load_image('assets/IKM_Assets/DownButtonInactive.png')
+    up_active_image = up_active.copy()
+    up_inactive_image = up_inactive.copy()
+    down_active_image = down_active.copy()
+    down_inactive_image = down_inactive.copy()
 
     blue_arrow_image = load_image("assets/BlueArrow.png")
     blue_arrow_image = pygame.transform.scale(blue_arrow_image, (blue_arrow_image.get_size()[0]*SCREEN_WIDTH*0.000125, blue_arrow_image.get_size()[1]*SCREEN_HEIGHT*0.000111))
-    blue_arrow_angle = 0
 
     upper_reservoir_frame_index = 100
-    running = True
 
     # Button positioning
     button_width = up_active_image.get_width() * SCREEN_WIDTH / 1920
@@ -3463,14 +4767,19 @@ def PSH_Level():
     up_button_y = SCREEN_HEIGHT * 0.83
     down_button_y = SCREEN_HEIGHT * 0.93
 
+    up_active_image = pygame.transform.smoothscale(up_active_image, (int(button_width), int(button_height)))
+    up_inactive_image = pygame.transform.smoothscale(up_inactive_image, (int(button_width), int(button_height)))
+    down_active_image = pygame.transform.smoothscale(down_active_image, (int(button_width), int(button_height)))
+    down_inactive_image = pygame.transform.smoothscale(down_inactive_image, (int(button_width), int(button_height)))
+
     up_button_rect = pygame.Rect(button_x, up_button_y, button_width, button_height)
     down_button_rect = pygame.Rect(button_x, down_button_y, button_width, button_height)
 
     # PSH Upper Reservoir Frame Positioning (LEFT)
-    upper_edge_y = int(SCREEN_HEIGHT * 0.03)
-    left_edge_x = int(SCREEN_WIDTH * 0.03)
+    upper_edge_y = int(SCREEN_HEIGHT * 0.08)
+    left_edge_x = int(SCREEN_WIDTH * 0.01)
     border_width = upper_reservoir_image.get_width()*1.005
-    border_height = upper_reservoir_image.get_height()*1.01
+    border_height = upper_reservoir_image.get_height()*1.013
     border_x = left_edge_x*0.975
     border_y = upper_edge_y*0.975
 
@@ -3479,6 +4788,9 @@ def PSH_Level():
     panel_width = (control_panel_image.get_size()[0] * SCREEN_WIDTH / 1920)/2
     panel_height = (control_panel_image.get_size()[1] * SCREEN_HEIGHT / 1080)/2
     scaled_panel = pygame.transform.smoothscale(control_panel_image, (panel_width, panel_height))
+    red_panel = tint_surface(scaled_panel, (255, 0, 0))
+    red_panel.set_alpha(127)
+    scaled_panel.set_alpha(127)
 
     panel_font_size = int(panel_height * 0.15)
     panel_font = pygame.font.Font(None, panel_font_size)
@@ -3489,13 +4801,13 @@ def PSH_Level():
 
     graph_width = (1200*screen.get_size()[0] / 1920)/2.8
     graph_height = (900*screen.get_size()[1] / 1080)/2.8
-    graph_x = SCREEN_WIDTH - graph_width - SCREEN_WIDTH * 0.02
-    graph_y = int(SCREEN_HEIGHT * 0.05) 
+    graph_x = SCREEN_WIDTH - graph_width - SCREEN_WIDTH * 0.01
+    graph_y = int(SCREEN_HEIGHT * 0.1) 
     graph_border = pygame.transform.smoothscale(border_frame_image, (int(graph_width*1.025), int(graph_height*1.025)))
 
     # Load electricity image
     light_image = load_image("assets/Light.png")
-    light_image = pygame.transform.smoothscale(light_image, (light_image.get_size()[0]*0.05,light_image.get_size()[1]*0.05))
+    light_image = pygame.transform.smoothscale(light_image, (light_image.get_size()[0]*0.05*(SCREEN_WIDTH/1280),light_image.get_size()[1]*0.05*(SCREEN_HEIGHT/720)))
     # Define light animation positions
     light_positions = [
         (SCREEN_WIDTH * 0.402, 0),
@@ -3601,220 +4913,270 @@ def PSH_Level():
     skip_text = skip_font.render("Skip", True, (255, 255, 255))
     skip_text_rect = skip_text.get_rect(center=skip_rect.center)
 
-    display = 0
+    if SCREEN_WIDTH == 960:
+        performance_font = pygame.font.SysFont(None, 24)
+        complete_font = pygame.font.SysFont(None, 48)
+        warning_font = pygame.font.SysFont(None, 24, bold=True)
+    elif SCREEN_WIDTH == 1280:
+        performance_font = pygame.font.SysFont(None, 36)
+        complete_font = pygame.font.SysFont(None, 72)
+        warning_font = pygame.font.SysFont(None, 36, bold=True)
+    elif SCREEN_WIDTH == 1600:
+        performance_font = pygame.font.SysFont(None, 48)
+        complete_font = pygame.font.SysFont(None, 96)
+        warning_font = pygame.font.SysFont(None, 48, bold=True)
+
+    rotated_blue_arrow_1 = pygame.transform.rotozoom(blue_arrow_image, -55, 1.0)
+    rotated_blue_arrow_2 = pygame.transform.rotozoom(blue_arrow_image, 125, 1.0)
+
+    power_index = 0
+    display = 60
+    clock = pygame.time.Clock()
+    running = True
 
     while running:
-        screen.blit(static_background_image, (0, 0))
+        if game_state['level_complete']:
+            screen.blit(static_background_image, (0,0))
 
-        # Update upper reservoir frame index scaled by release %
-        release_factor = abs(game_state['release']) / 50.0
-        previous_upper_reservoir_index = upper_reservoir_frame_index
+            # Draw the overlay
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+            overlay.set_alpha(200)  # Semi-transparent
+            overlay.fill((0, 0, 0))
+            screen.blit(overlay, (0, 0))
 
-        if game_state['release'] > 0 and upper_reservoir_frame_index < NUM_PSH_FRAMES - 1:
-            upper_reservoir_frame_index += release_factor
-            if upper_reservoir_frame_index > NUM_PSH_FRAMES - 1:
-                upper_reservoir_frame_index = NUM_PSH_FRAMES - 1
-        elif game_state['release'] < 0 and upper_reservoir_frame_index > 0:
-            upper_reservoir_frame_index -= release_factor
-            if upper_reservoir_frame_index < 0:
-                upper_reservoir_frame_index = 0
+            complete_text = "Level complete! Your score was:"
+            complete_label = complete_font.render(complete_text, True, (255, 255, 255))
+            score_text = f"{int(calculate_score(game_state['score'],factor=1200))}"
+            score_label = complete_font.render(score_text, True, (255, 255, 255))
 
-        # Convert to int for indexing frames
-        upper_reservoir_frame_index_int = int(upper_reservoir_frame_index)
-        # Convert to int for index comparison
-        current_index_int = int(upper_reservoir_frame_index)
-        previous_index_int = int(previous_upper_reservoir_index)
-
-        if game_state['release'] > 0:
-            turbine_index += int(release_factor*5)
-            turbine_index = turbine_index % 46
-        elif game_state['release'] < 0:
-            turbine_index -= int(release_factor*5)
-            if turbine_index < 0:
-                    turbine_index = 45
-
-
-        # If we just overflowed the reservoir
-        if previous_index_int < NUM_PSH_FRAMES - 1 and current_index_int >= NUM_PSH_FRAMES - 1:
-            game_state['release'] = 0  # Stop the flow
-        # If we just emptied the reservoir
-        elif previous_index_int > 0 and current_index_int <= 0:
-            game_state['release'] = 0  # Stop the flow
-
-        if current_index_int >= NUM_PSH_FRAMES - 1:
-            allow_release = False
-            allow_pump = True
-        elif current_index_int <= 0:
-            allow_release = True
-            allow_pump = False
+            screen.blit(complete_label, ((SCREEN_WIDTH - complete_label.get_width()) // 2, SCREEN_HEIGHT // 3))
+            screen.blit(score_label, ((SCREEN_WIDTH - score_label.get_width()) // 2, SCREEN_HEIGHT // 2))
         else:
-            allow_release = True
-            allow_pump = True
+            game_state['elapsed_time'] += clock.tick(60) / 1000.0  # Convert milliseconds to seconds
+            if game_state['elapsed_time'] >= PSH_LEVEL_DURATION:
+                game_state['level_complete'] = True
+            screen.blit(static_background_image, (0, 0))
 
-        
-        #light animation
-        if game_state['release'] != 0:
-                if game_state['release'] < 0:
-                    light_index = (light_index + 1) % len(light_positions)
-                    light2_index = (light2_index + 1) % len(light_positions)
-                    light3_index = (light3_index + 1) % len(light_positions)
-                    light4_index = (light4_index + 1) % len(light_positions)
-                    light5_index = (light5_index + 1) % len(light_positions)
-                    screen.blit(light_image, light_positions[light_index])
-                    screen.blit(light_image, light_positions[light2_index])
-                    screen.blit(light_image, light_positions[light3_index])
-                    screen.blit(light_image, light_positions[light4_index])
-                    screen.blit(light_image, light_positions[light5_index])
-                    screen.blit(light_image, light2_positions[light_index])
-                    screen.blit(light_image, light2_positions[light2_index])
-                    screen.blit(light_image, light2_positions[light3_index])
-                    screen.blit(light_image, light2_positions[light4_index])
-                    screen.blit(light_image, light2_positions[light5_index])
-                else:
-                    light_index = (light_index - 1) % len(light_positions)
-                    light2_index = (light2_index - 1) % len(light_positions)
-                    light3_index = (light3_index - 1) % len(light_positions)
-                    light4_index = (light4_index - 1) % len(light_positions)
-                    light5_index = (light5_index - 1) % len(light_positions)
-                    screen.blit(light_image, light_positions[light_index])
-                    screen.blit(light_image, light_positions[light2_index])
-                    screen.blit(light_image, light_positions[light3_index])
-                    screen.blit(light_image, light_positions[light4_index])
-                    screen.blit(light_image, light_positions[light5_index])
-                    screen.blit(light_image, light2_positions[light_index])
-                    screen.blit(light_image, light2_positions[light2_index])
-                    screen.blit(light_image, light2_positions[light3_index])
-                    screen.blit(light_image, light2_positions[light4_index])
-                    screen.blit(light_image, light2_positions[light5_index])
-        else:
-            light_index = 0
-            light2_index = 4
-            light3_index = 8
-            light4_index = 12
-            light5_index = 16
+            # Update upper reservoir frame index scaled by release %
+            release_factor = abs(game_state['release']) / 50.0
+            previous_upper_reservoir_index = upper_reservoir_frame_index
 
-        screen.blit(turbine_frames[turbine_index], (SCREEN_WIDTH*0.3855, SCREEN_HEIGHT*0.5389))
-        screen.blit(frames[upper_reservoir_frame_index_int], (SCREEN_WIDTH*0.5925, SCREEN_HEIGHT*0.431))
-        if game_state['release'] == 0:
-                screen.blit(noflow_frames[int((NUM_PSH_FRAMES-upper_reservoir_frame_index_int)*0.73)], (SCREEN_WIDTH*0.5925, SCREEN_HEIGHT*0.431))
-        screen.blit(scaled_border, (border_x, border_y))
-        screen.blit(upper_reservoir_image, (left_edge_x, upper_edge_y))
-        screen.blit(upper_reservoir_frames[upper_reservoir_frame_index_int], (left_edge_x, upper_edge_y+SCREEN_HEIGHT*0.09))
-        screen.blit(scaled_panel, (0, SCREEN_HEIGHT * 0.8))
+            if game_state['release'] > 0 and upper_reservoir_frame_index < NUM_PSH_FRAMES - 1:
+                upper_reservoir_frame_index += release_factor
+                if upper_reservoir_frame_index > NUM_PSH_FRAMES - 1:
+                    upper_reservoir_frame_index = NUM_PSH_FRAMES - 1
+            elif game_state['release'] < 0 and upper_reservoir_frame_index > 0:
+                upper_reservoir_frame_index -= release_factor
+                if upper_reservoir_frame_index < 0:
+                    upper_reservoir_frame_index = 0
 
-        # Text displays
-        if game_state['release'] > 0:
-            power_generated = 0.65 * game_state['release']
-            game_state['power_data'].append(power_generated)
-            release_status = f"Current Release Rate: {game_state['release']} cfs"
-        elif game_state['release'] < 0:
-            power_generated = 0
-            excess_power = 0.65 * game_state['release']
-            game_state['power_data'].append(excess_power)
-            release_status = f"Current Pump Rate: {abs(game_state['release'])} cfs"
-        else:
-            power_generated = 0
-            game_state['power_data'].append(power_generated)
-            release_status = f"No Current Flow"
-        
-        power_status = f"Power Generated: {power_generated:.1f} MW/s"
-        graph_filename = update_psh_graph(game_state['x_start'], game_state['x_end'], game_state['power_data'], display)
-        graph_image = load_image(graph_filename)
+            # Convert to int for indexing frames
+            upper_reservoir_frame_index_int = int(upper_reservoir_frame_index)
+            # Convert to int for index comparison
+            current_index_int = int(upper_reservoir_frame_index)
+            previous_index_int = int(previous_upper_reservoir_index)
 
-        display = display % (len(LOAD_CURVE)-1)
-        display += 1
+            if game_state['release'] > 0:
+                turbine_index += int(release_factor*5)
+                turbine_index = turbine_index % 46
+            elif game_state['release'] < 0:
+                turbine_index -= int(release_factor*5)
+                if turbine_index < 0:
+                        turbine_index = 45
+
+
+            # If we just overflowed the reservoir
+            if previous_index_int < NUM_PSH_FRAMES - 1 and current_index_int >= NUM_PSH_FRAMES - 1:
+                game_state['release'] = 0  # Stop the flow
+            # If we just emptied the reservoir
+            elif previous_index_int > 0 and current_index_int <= 0:
+                game_state['release'] = 0  # Stop the flow
+
+            if current_index_int >= NUM_PSH_FRAMES - 1:
+                allow_release = False
+                allow_pump = True
+            elif current_index_int <= 0:
+                allow_release = True
+                allow_pump = False
+            else:
+                allow_release = True
+                allow_pump = True
+
             
+            #light animation
+            if game_state['release'] != 0:
+                    if game_state['release'] < 0:
+                        light_index = (light_index + 1) % len(light_positions)
+                        light2_index = (light2_index + 1) % len(light_positions)
+                        light3_index = (light3_index + 1) % len(light_positions)
+                        light4_index = (light4_index + 1) % len(light_positions)
+                        light5_index = (light5_index + 1) % len(light_positions)
+                        screen.blit(light_image, light_positions[light_index])
+                        screen.blit(light_image, light_positions[light2_index])
+                        screen.blit(light_image, light_positions[light3_index])
+                        screen.blit(light_image, light_positions[light4_index])
+                        screen.blit(light_image, light_positions[light5_index])
+                        screen.blit(light_image, light2_positions[light_index])
+                        screen.blit(light_image, light2_positions[light2_index])
+                        screen.blit(light_image, light2_positions[light3_index])
+                        screen.blit(light_image, light2_positions[light4_index])
+                        screen.blit(light_image, light2_positions[light5_index])
+                    else:
+                        light_index = (light_index - 1) % len(light_positions)
+                        light2_index = (light2_index - 1) % len(light_positions)
+                        light3_index = (light3_index - 1) % len(light_positions)
+                        light4_index = (light4_index - 1) % len(light_positions)
+                        light5_index = (light5_index - 1) % len(light_positions)
+                        screen.blit(light_image, light_positions[light_index])
+                        screen.blit(light_image, light_positions[light2_index])
+                        screen.blit(light_image, light_positions[light3_index])
+                        screen.blit(light_image, light_positions[light4_index])
+                        screen.blit(light_image, light_positions[light5_index])
+                        screen.blit(light_image, light2_positions[light_index])
+                        screen.blit(light_image, light2_positions[light2_index])
+                        screen.blit(light_image, light2_positions[light3_index])
+                        screen.blit(light_image, light2_positions[light4_index])
+                        screen.blit(light_image, light2_positions[light5_index])
+            else:
+                light_index = 0
+                light2_index = 4
+                light3_index = 8
+                light4_index = 12
+                light5_index = 16
 
-        scaled_graph_image = pygame.transform.scale(graph_image, (graph_width, graph_height))
-        screen.blit(graph_border, (graph_x, graph_y))
-        screen.blit(scaled_graph_image, (graph_x, graph_y))
+            screen.blit(turbine_frames[turbine_index], (SCREEN_WIDTH*0.3855, SCREEN_HEIGHT*0.5389))
+            screen.blit(frames[upper_reservoir_frame_index_int], (SCREEN_WIDTH*0.5925, SCREEN_HEIGHT*0.431))
+            if game_state['release'] == 0:
+                    screen.blit(noflow_frames[int((NUM_PSH_FRAMES-upper_reservoir_frame_index_int)*0.73)], (SCREEN_WIDTH*0.5925, SCREEN_HEIGHT*0.431))
+            screen.blit(scaled_border, (border_x, border_y))
+            screen.blit(upper_reservoir_image, (left_edge_x, upper_edge_y))
+            screen.blit(upper_reservoir_frames[upper_reservoir_frame_index_int], (left_edge_x, upper_edge_y+SCREEN_HEIGHT*0.09))
+            if current_index_int >= NUM_PSH_FRAMES - 1 or current_index_int <= 0:
+                screen.blit(red_panel, (0, SCREEN_HEIGHT * 0.8))
+                screen.blit(warning_font.render("Warning: Reservoir below pump/turbine intake!", True, (255, 255, 255)), (SCREEN_WIDTH * 0.02, SCREEN_HEIGHT * 0.75))
+            else:
+                screen.blit(scaled_panel, (0, SCREEN_HEIGHT * 0.8))
 
-        if len(game_state['power_data']) > 10:
-            game_state['power_data'] = game_state['power_data'][-10:]
+            # Text displays
+            if game_state['release'] > 0:
+                power_generated = 0.65 * game_state['release']
+                game_state['power_data'].append(power_generated)
+                release_status = f"Current Release Rate: {int(26.67*game_state['release'])} cfs"
+            elif game_state['release'] < 0:
+                power_generated = 0
+                excess_power = 0.65 * game_state['release']
+                game_state['power_data'].append(excess_power)
+                release_status = f"Current Pump Rate: {int(abs(26.67*game_state['release']))} cfs"
+            else:
+                power_generated = 0
+                game_state['power_data'].append(power_generated)
+                release_status = f"No Current Flow"
+            
+            if game_state['release'] >= 0:
+                power_status = f"Power Generated: {int(0.025*26.67*power_generated/0.65)} MW"
+            else:
+                power_status = f"Power Consumed: {int(abs(0.025*26.67*excess_power/0.65))} MW"
 
-        game_state['x_start'] += 0.05
-        game_state['x_end'] += 0.05
+            graph_filename = update_psh_graph(game_state['x_start'], game_state['x_end'], game_state['power_data'], display)
+            graph_image = load_image(graph_filename)
 
-        screen.blit(panel_font.render(release_status, True, (255, 255, 255)), (SCREEN_WIDTH * 0.02, SCREEN_HEIGHT * 0.85))
-        screen.blit(panel_font.render(power_status, True, (255, 255, 255)), (SCREEN_WIDTH * 0.02, SCREEN_HEIGHT * 0.90))
+            display = display % (len(LOAD_CURVE)-1)
+            display += 1
+                
 
-        # Upper Reservoir Water Level bar
-        bar_index = int((300 - upper_reservoir_frame_index_int) * (1/3))
-        bar_index = min(100,bar_index)
-        bar_image = bar_frames[bar_index]
-        screen.blit(bar_image, (int(SCREEN_WIDTH * 0.315), int(SCREEN_HEIGHT * 0.83)))
+            scaled_graph_image = pygame.transform.scale(graph_image, (graph_width, graph_height))
+            screen.blit(graph_border, (graph_x, graph_y))
+            screen.blit(scaled_graph_image, (graph_x, graph_y))
 
-        # Label
-        screen.blit(label_text, (label_x, label_y))
+            if len(game_state['power_data']) > 10:
+                game_state['power_data'] = game_state['power_data'][-10:]
 
-        # Buttons
-        up_image = up_active_image if game_state['release'] < MAX_PSH_RELEASE and allow_release else up_inactive_image
-        down_image = down_active_image if game_state['release'] > MIN_PSH_RELEASE and allow_pump else down_inactive_image
+            game_state['x_start'] += 0.05
+            game_state['x_end'] += 0.05
 
-        up_scaled = pygame.transform.scale(up_image, (int(button_width), int(button_height)))
-        down_scaled = pygame.transform.scale(down_image, (int(button_width), int(button_height)))
+            screen.blit(panel_font.render(release_status, True, (255, 255, 255)), (SCREEN_WIDTH * 0.02, SCREEN_HEIGHT * 0.85))
+            screen.blit(panel_font.render(power_status, True, (255, 255, 255)), (SCREEN_WIDTH * 0.02, SCREEN_HEIGHT * 0.90))
 
-        screen.blit(up_scaled, up_button_rect.topleft)
-        screen.blit(down_scaled, down_button_rect.topleft)
+            # Upper Reservoir Water Level bar
+            bar_index = int((300 - upper_reservoir_frame_index_int) * (1/3))
+            bar_index = min(100,bar_index)
+            bar_image = bar_frames[bar_index]
+            screen.blit(bar_image, (int(SCREEN_WIDTH * 0.315), int(SCREEN_HEIGHT * 0.83)))
 
-        # Get target load value from sine wave at this point in time
-        current_x = game_state['x_start'] + 0.5
-        target_load = 37 * np.sin(0.75*current_x)
+            # Label
+            screen.blit(label_text, (label_x, label_y))
 
-        # Actual power is power_generated or pumping (negative power)
-        actual_power = 0.25 * game_state['release']
+            # Buttons
+            up_image = up_active_image if game_state['release'] < MAX_PSH_RELEASE and allow_release else up_inactive_image
+            down_image = down_active_image if game_state['release'] > MIN_PSH_RELEASE and allow_pump else down_inactive_image
 
-        # Calculate imbalance and store
-        imbalance = abs(actual_power - target_load)
-        game_state['imbalances'].append(imbalance)
+            screen.blit(up_image, up_button_rect.topleft)
+            screen.blit(down_image, down_button_rect.topleft)
 
-        avg_imbalance = sum(game_state['imbalances']) / len(game_state['imbalances'])
-        #imbalance_text = f"Avg Power Imbalance: {avg_imbalance:.2f} MW"
-        #text_surface = font.render(imbalance_text, True, (255, 255, 255))
-        #text_rect = text_surface.get_rect(center=(SCREEN_WIDTH // 2, int(SCREEN_HEIGHT * 0.01)))
-        #screen.blit(text_surface, text_rect)
+            # Get target load value from sine wave at this point in time
+            target_load = (PSH_LOAD[(display+10)%len(PSH_LOAD)]/6)-20
 
-        release_alpha = int(min(255, max(0, abs(release_factor/3) * 255)))
+            # Actual power is power_generated or pumping (negative power)
+            actual_power = 0.65 * game_state['release']
 
-        # Determine rotation angle based on release factor
-        if game_state['release'] > 0:
-            blue_arrow_angle = -55  
-        elif game_state['release'] < 0:
-            blue_arrow_angle = 125  
+            # Calculate imbalance and store
+            imbalance = abs(actual_power - target_load)
+            game_state['score'] += imbalance
+            power_index += 1
 
-        # Rotate (and optionally scale) the arrow using rotozoom for smoother transformation
-        rotated_blue_arrow = pygame.transform.rotozoom(blue_arrow_image, blue_arrow_angle, 1.0)
+            avg_imbalance = game_state['score'] / power_index
+            imbalance_text = f"Average Power Imbalance: {(1.026*avg_imbalance):.2f} MW"
+            text_surface = performance_font.render(imbalance_text, True, (255, 255, 255))
+            screen.blit(text_surface, (SCREEN_WIDTH * 0.01, SCREEN_HEIGHT * 0.02))
 
-        # Set alpha transparency based on release factor
-        rotated_blue_arrow.set_alpha(release_alpha)
+            screen.blit(performance_font.render(f"Total Duration: {PSH_LEVEL_DURATION} sec", True, (255, 255, 255)), (SCREEN_WIDTH * 0.4, SCREEN_HEIGHT * 0.02))
+            screen.blit(performance_font.render(f"Elapsed Time: {int(game_state['elapsed_time'])} sec", True, (255, 255, 255)), (SCREEN_WIDTH * 0.65, SCREEN_HEIGHT * 0.02))
 
-        # Draw the arrow on screen
-        screen.blit(rotated_blue_arrow, (SCREEN_WIDTH*0.18,SCREEN_HEIGHT*0.5))
+            release_alpha = int(min(255, max(0, abs(release_factor/3) * 255)))
 
-        # Draw exit button
-        screen.blit(exit_red_frame, exit_rect)
-        screen.blit(exit_text, exit_text_rect)
+            # Determine rotation angle based on release factor
+            if game_state['release'] >= 0:
+                rotated_blue_arrow = rotated_blue_arrow_1
+            elif game_state['release'] < 0:
+                rotated_blue_arrow = rotated_blue_arrow_2
 
-        # Draw skip button
-        screen.blit(skip_green_frame, skip_rect)
-        screen.blit(skip_text, skip_text_rect)
+            # Set alpha transparency based on release factor
+            rotated_blue_arrow.set_alpha(release_alpha)
+
+            # Draw the arrow on screen
+            screen.blit(rotated_blue_arrow, (SCREEN_WIDTH*0.18,SCREEN_HEIGHT*0.5))
+
+            # Draw exit button
+            screen.blit(exit_red_frame, exit_rect)
+            screen.blit(exit_text, exit_text_rect)
+
+            # Draw skip button
+            screen.blit(skip_green_frame, skip_rect)
+            screen.blit(skip_text, skip_text_rect)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                save_game_data()
                 pygame.quit()
                 sys.exit()
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                mx, my = pygame.mouse.get_pos()
-                if up_button_rect.collidepoint(mx, my):
+                if game_state['level_complete']:
+                    calc_score = calculate_score(game_state['score'], factor=1200)
+                    if level_scores[3] < calc_score:
+                        level_scores[3] = calc_score
+                    level_completed[3] = True
+                    save_game_data()
+                    return
+                if up_button_rect.collidepoint(event.pos):
                     if game_state['release'] < MAX_PSH_RELEASE and allow_release:
                         game_state['release'] += RELEASE_STEP
-                elif down_button_rect.collidepoint(mx, my):
+                elif down_button_rect.collidepoint(event.pos):
                     if game_state['release'] > MIN_PSH_RELEASE and allow_pump:
                         game_state['release'] -= RELEASE_STEP
-                elif exit_rect.collidepoint(mx, my):
+                elif exit_rect.collidepoint(event.pos):
                     return  # Exit this level
-                elif skip_rect.collidepoint(mx, my):
-                    level_completed[3] = True  # Index 1 corresponds to RoR level
+                elif skip_rect.collidepoint(event.pos):
+                    level_completed[3] = True
                     return
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_UP:
@@ -3824,14 +5186,13 @@ def PSH_Level():
                     if game_state['release'] > MIN_PSH_RELEASE and allow_pump:
                         game_state['release'] -= RELEASE_STEP
             elif event.type == pygame.MOUSEWHEEL:
-                if event.y > 0:
-                    if game_state['release'] < MAX_PSH_RELEASE and allow_release:
-                        game_state['release'] += RELEASE_STEP
-                elif event.y < 0:
+                if event.y < 0:
                     if game_state['release'] > MIN_PSH_RELEASE and allow_pump:
                         game_state['release'] -= RELEASE_STEP
-
-        clock.tick(30)
+                elif event.y > 0:
+                    if game_state['release'] < MAX_PSH_RELEASE and allow_release:
+                        game_state['release'] += RELEASE_STEP
+                    
         pygame.display.flip()
 
 def Level4_intro():
@@ -3880,6 +5241,7 @@ def Environment_Level():
         game['clock'].tick(30)
 
 # --- MAIN PROGRAM ---
+has_save_file = load_game_data()
 opening_screen(background2, argonne_logo, nrel_logo, doe_logo)
 del argonne_logo
 del nrel_logo
