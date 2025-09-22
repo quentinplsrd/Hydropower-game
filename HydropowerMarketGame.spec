@@ -56,7 +56,7 @@ bootloader\_ignore\_signals=False,
 strip=False,
 upx=True,
 console=False,  # equivalent to --noconsole / --windowed
-icon='Game.icn',  # macOS will convert .ico to .icns if necessary
+icon='Game.icns',  # macOS will convert .ico to .icns if necessary
 )
 
 coll = COLLECT(
