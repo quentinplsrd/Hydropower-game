@@ -2308,6 +2308,7 @@ def character_select():
                 if confirm_button_rect and confirm_button_rect.collidepoint(event.pos):
                     # Only accept confirm if valid selection and name entered
                     if selected_character != 4 and player_name.strip() != "":
+                        save_game_data()
                         running = False
             elif event.type == pygame.MOUSEMOTION:
                 ignore_mouse_hover_until_move = False
@@ -2860,6 +2861,7 @@ def intro_level():
     if scenes:
         run_dialogue(scenes)
     level_completed[0] = True
+    save_game_data()
 
 def Hydropower_Model():
     global SCREEN_WIDTH, SCREEN_HEIGHT
@@ -3565,6 +3567,7 @@ def RoR_Level():
                     return  # Exit this level
                 elif skip_rect.collidepoint(event.pos):
                     level_completed[1] = True
+                    save_game_data()
                     return
             elif event.type == pygame.MOUSEWHEEL:
                 if event.y < 0 and game_state['rotation'] > 10:
@@ -4517,6 +4520,7 @@ def Dam_Level():
                     return  # Exit this level
                 elif skip_rect.collidepoint(event.pos):
                     level_completed[2] = True
+                    save_game_data()
                     return
             elif event.type == pygame.MOUSEWHEEL:
                 if event.y > 0:
@@ -5204,6 +5208,7 @@ def PSH_Level():
                     return  # Exit this level
                 elif skip_rect.collidepoint(event.pos):
                     level_completed[3] = True
+                    save_game_data()
                     return
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_UP:
