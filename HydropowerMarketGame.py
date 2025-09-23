@@ -749,11 +749,21 @@ def draw_3d_surface(Q_val, h_val, azim, elev):
         plt.close(fig_3d)
 
     if SCREEN_WIDTH == 960:
-        fig_3d = plt.figure(figsize=(4, 3), dpi=100)
+        if sys.platform == 'darwin':
+            fig_3d = plt.figure(figsize=(4, 3), dpi=50)
+        else:
+            fig_3d = plt.figure(figsize=(4, 3), dpi=100)
     elif SCREEN_WIDTH == 1280:
-        fig_3d = plt.figure(figsize=(5, 4), dpi=100)
+        if sys.platform == 'darwin':
+            fig_3d = plt.figure(figsize=(5, 4), dpi=50)
+        else:
+            fig_3d = plt.figure(figsize=(5, 4), dpi=100)
     elif SCREEN_WIDTH == 1600:
-        fig_3d = plt.figure(figsize=(6, 5), dpi=100)
+        if sys.platform == 'darwin':
+            fig_3d = plt.figure(figsize=(6, 5), dpi=50)
+        else:
+            fig_3d = plt.figure(figsize=(6, 5), dpi=100)
+
     ax_3d = fig_3d.add_subplot(111, projection='3d',computed_zorder=False)
     fig_3d.subplots_adjust(left=0.15, right=0.85, bottom=0.2)
     Q = np.linspace(0, 10000, 50)
@@ -794,11 +804,20 @@ def draw_colormap(Q_val, h_val):
         plt.close(fig_colormap)
 
     if SCREEN_WIDTH == 960:
-        fig_colormap, ax_colormap = plt.subplots(figsize=(4, 3), dpi=100)
+        if sys.platform == 'darwin':
+            fig_colormap, ax_colormap = plt.subplots(figsize=(4, 3), dpi=50)
+        else:
+            fig_colormap, ax_colormap = plt.subplots(figsize=(4, 3), dpi=100)
     elif SCREEN_WIDTH == 1280:
-        fig_colormap, ax_colormap = plt.subplots(figsize=(5, 4), dpi=100)
+        if sys.platform == 'darwin':
+            fig_colormap, ax_colormap = plt.subplots(figsize=(5, 4), dpi=50)
+        else:
+            fig_colormap, ax_colormap = plt.subplots(figsize=(5, 4), dpi=100)
     elif SCREEN_WIDTH == 1600:
-        fig_colormap, ax_colormap = plt.subplots(figsize=(6, 5), dpi=100)
+        if sys.platform == 'darwin':
+            fig_colormap, ax_colormap = plt.subplots(figsize=(6, 5), dpi=50)
+        else:
+            fig_colormap, ax_colormap = plt.subplots(figsize=(6, 5), dpi=100)
     Q = np.linspace(0, 10000, 200)
     h = np.linspace(0, 100, 200)
     Q_grid, h_grid = np.meshgrid(Q, h)
@@ -1150,11 +1169,20 @@ def draw_dam_colormap(Q_val, h_val):
         plt.close(fig_colormap)
 
     if SCREEN_WIDTH == 960:
-        fig_colormap, ax_colormap = plt.subplots(figsize=(2.5, 2), dpi=100)
+        if sys.platform == 'darwin':
+            fig_colormap, ax_colormap = plt.subplots(figsize=(2.5, 2), dpi=50)
+        else:
+            fig_colormap, ax_colormap = plt.subplots(figsize=(2.5, 2), dpi=100)
     elif SCREEN_WIDTH == 1280:
-        fig_colormap, ax_colormap = plt.subplots(figsize=(3.5, 2.5), dpi=100)
+        if sys.platform == 'darwin':
+            fig_colormap, ax_colormap = plt.subplots(figsize=(3.5, 2.5), dpi=50)
+        else:
+            fig_colormap, ax_colormap = plt.subplots(figsize=(3.5, 2.5), dpi=100)
     elif SCREEN_WIDTH == 1600:
-        fig_colormap, ax_colormap = plt.subplots(figsize=(4.5, 3), dpi=100)
+        if sys.platform == 'darwin':
+            fig_colormap, ax_colormap = plt.subplots(figsize=(4.5, 3), dpi=50)
+        else:
+            fig_colormap, ax_colormap = plt.subplots(figsize=(4.5, 3), dpi=100)
     Q = np.linspace(0, 4, 50)
     h = np.linspace(0, 100, 200)
     Q_grid, h_grid = np.meshgrid(Q, h)
@@ -2281,6 +2309,7 @@ def character_select():
                 if confirm_button_rect and confirm_button_rect.collidepoint(event.pos):
                     # Only accept confirm if valid selection and name entered
                     if selected_character != 4 and player_name.strip() != "":
+                        save_game_data()
                         running = False
             elif event.type == pygame.MOUSEMOTION:
                 ignore_mouse_hover_until_move = False
@@ -2830,8 +2859,8 @@ def intro_level():
     ]
 
     scenes = [(scene1_image, dialogue_scene1), (scene2_image, dialogue_scene2)]
-    if scenes:
-        run_dialogue(scenes)
+    run_dialogue(scenes)
+    save_game_data()
     level_completed[0] = True
 
 def Hydropower_Model():
