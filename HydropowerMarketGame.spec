@@ -1,71 +1,44 @@
-# HydropowerMarketGame.spec
+# -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_all
 
-# PyInstaller spec file for macOS .app build
+datas = [('assets', 'assets')]
+binaries = []
+hiddenimports = ['matplotlib.backends.backend_agg']
+tmp_ret = collect_all('ortools')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
-# Imports
-
-import sys
-from PyInstaller.utils.hooks import collect\_all, collect\_dynamic\_libs
-from PyInstaller.building.build\_main import Analysis, PYZ, EXE, COLLECT
-
-# Collect ortools (Python + binaries + data)
-
-ortools\_data, ortools\_binaries, ortools\_hiddenimports = collect\_all('ortools')
-
-# Collect OpenCV binaries
-
-cv2\_binaries = collect\_dynamic\_libs('cv2')
-
-# Collect matplotlib backends
-
-matplotlib\_hidden = \[
-"matplotlib.backends.backend\_agg",
-"matplotlib.backends.backend\_macosx",
-]
 
 a = Analysis(
-\['HydropowerMarketGame.py'],
-pathex=\[],
-binaries=ortools\_binaries + cv2\_binaries,
-datas=\[
-('assets', 'assets'),  # bundle assets folder
-] + ortools\_data,
-hiddenimports=ortools\_hiddenimports + matplotlib\_hidden,
-hookspath=\[],
-hooksconfig={},
-runtime\_hooks=\[],
-excludes=\[],
-win\_no\_prefer\_redirects=False,
-win\_private\_assemblies=False,
-cipher=None,
-noarchive=False,
+    ['HydropowerMarketGame.py'],
+    pathex=[],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+    optimize=0,
 )
-
-pyz = PYZ(a.pure, a.zipped\_data, cipher=a.cipher)
+pyz = PYZ(a.pure)
 
 exe = EXE(
-pyz,
-a.scripts,
-a.binaries,
-a.zipfiles,
-a.datas,
-\[],
-name='HydropowerMarketGame',
-debug=False,
-bootloader\_ignore\_signals=False,
-strip=False,
-upx=True,
-console=False,  # equivalent to --noconsole / --windowed
-icon='Game.icns',  # macOS will convert .ico to .icns if necessary
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name='HydropowerMarketGame',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    console=False
 )
 
-coll = COLLECT(
-exe,
-a.binaries,
-a.zipfiles,
-a.datas,
-strip=False,
-upx=True,
-upx\_exclude=\[],
-name='HydropowerMarketGame'
-)
+app = BUNDLE(exe,
+    name='HydropowerMarketGame.app',
+    icon='Game.icns',
+    bundle_name='Hydropower Game')

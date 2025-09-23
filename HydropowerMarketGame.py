@@ -1,10 +1,13 @@
 import pygame
 import sys
 import os
+from pathlib import Path
 import webbrowser
 import cv2
 import numpy as np
 import random
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import tempfile
@@ -21,7 +24,31 @@ GREEN = (0, 200, 0)
 
 pygame.init()
 
-SAVE_FILE = 'save_game.json'
+def get_save_path():
+    """
+    Finds the correct cross-platform save location for user data.
+    - Windows: %APPDATA%/HydropowerMarketGame
+    - macOS:   ~/Library/Application Support/HydropowerMarketGame
+    - Linux:   ~/.config/HydropowerMarketGame
+    """
+    home = Path.home()
+
+    if sys.platform == "win32":
+        # Windows path
+        save_dir = Path(os.getenv('APPDATA')) / "HydropowerMarketGame"
+    elif sys.platform == "darwin":
+        # macOS path
+        save_dir = home / "Library" / "Application Support" / "HydropowerMarketGame"
+    else:
+        # Linux/other path
+        save_dir = home / ".config" / "HydropowerMarketGame"
+
+    # Create the directory if it doesn't exist
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    return save_dir / "save_game.json"
+
+SAVE_FILE = get_save_path()
 
 #Model Variables
 fig_3d, ax_3d, canvas_3d, scatter = None, None, None, None
