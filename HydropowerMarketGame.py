@@ -10,6 +10,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from matplotlib import font_manager as fm
 import tempfile
 plt.rcParams["axes3d.mouserotationstyle"] = 'azel'
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -23,6 +24,7 @@ WHITE = (255, 255, 255)
 GREEN = (0, 200, 0)
 
 pygame.init()
+
 
 def get_save_path():
     """
@@ -70,7 +72,6 @@ cursor_visible = True
 cursor_last_switch = 0
 cursor_switch_interval = 500  # milliseconds
 
-
 #Player Information
 selected_character = 1
 face_rects = []
@@ -84,7 +85,7 @@ level_names = [
         "Level 1 - First Job: Run of River Hydropower Plant",
         "Level 2 - Moving Up: Dam Hydropower Plant",
         "Level 3 - Pumped Storage Hydropower Plant",
-        "Level 4 - Management: Environmental Safety Operations",
+        "Level 4 - Management: Environmental Operations",
         "Level 5 - Management: Working With the Power Grid"
     ]
 level_completed = [False] * len(level_names)
@@ -259,7 +260,6 @@ UPPER_RESERVOIR_PATH_TEMPLATE = 'assets/PSHSequences/PSHUpperReservoirFramesCut/
 
 FLOW_CUT_NUM_FRAMES = 211
 FLOW_CUT_PATH_TEMPLATE = 'assets/PSHSequences/PSHNoFlowTest1/NoFlow_frame_{}.jpg'
-font = pygame.font.SysFont("arial", 24)
 
 PSH_LOAD = np.array([ 4.00000000e+02,  3.98629950e+02,  3.97103074e+02,  3.95425686e+02,
         3.93604099e+02,  3.91644628e+02,  3.89553587e+02,  3.87337289e+02,
@@ -387,6 +387,8 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
+prop = fm.FontProperties(fname=resource_path("assets/Fonts/Electrolize-Regular.ttf"))
+
 def load_image(filename):
     try:
         return pygame.image.load(resource_path(filename)).convert_alpha()
@@ -477,9 +479,9 @@ def run_dialogue(scenes):
     )
 
     # --- Fonts ---
-    font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.035))
-    hint_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), italic=True)
-    name_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.038), bold=True)
+    font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), int(SCREEN_HEIGHT * 0.035))
+    hint_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Italic.ttf"), int(SCREEN_HEIGHT * 0.03))
+    name_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.038))
     text_color = (255, 255, 255)
 
     current_scene_index = 0
@@ -586,9 +588,9 @@ def Example_Graph(x_start=0, x_end=5, power_data=[], display=0,mode=0):
     plt.axis('off')
 
     if mode == 0:
-        legend = plt.legend(loc='upper right', facecolor='none', edgecolor='none', fontsize=14)
+        legend = plt.legend(loc='upper right', facecolor='none', edgecolor='none', prop=prop, fontsize=16)
     elif mode == 2:
-        legend = plt.legend(loc='lower left', facecolor='none', edgecolor='none', fontsize=14)
+        legend = plt.legend(loc='lower left', facecolor='none', edgecolor='none', prop=prop, fontsize=16)
     for text in legend.get_texts():
         text.set_color('white')
 
@@ -602,7 +604,7 @@ def Example_Graph(x_start=0, x_end=5, power_data=[], display=0,mode=0):
 def new_game():
     global selected_character,hovered_index,current_preview_index,ignore_mouse_hover_until_move,block_hover_if_random
     global random_selection_active,random_selection_start_time,random_highlight_index,last_interval_step
-    global confirm_clicked,name_input_active,player_name,level_completed, unlocked_levels
+    global confirm_clicked,name_input_active,player_name,level_completed, unlocked_levels, level_scores
     global cyc_font_size, cyc_font, cyc_label, cyc_title_font, cyc_title_text, cyc_confirm_font, cyc_confirm_text
     #Resets Things
     selected_character = 4
@@ -618,12 +620,13 @@ def new_game():
     name_input_active = False
     player_name = ""
     cyc_font_size = int(SCREEN_HEIGHT * 0.03)
-    cyc_font = pygame.font.SysFont("Arial", cyc_font_size, bold=True)
+    cyc_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), cyc_font_size)
     cyc_label = cyc_font.render("Random", True, WHITE)
-    cyc_title_font = pygame.font.SysFont("Arial", int(SCREEN_HEIGHT * 0.05), bold=True)
+    cyc_title_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.05))
     cyc_title_text = cyc_title_font.render("Choose your character!", True, WHITE)
-    cyc_confirm_font = pygame.font.SysFont("Arial", int(SCREEN_HEIGHT * 0.025), bold=True)
+    cyc_confirm_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.025))
     cyc_confirm_text = cyc_confirm_font.render("Confirm", True, WHITE)
+    level_scores = [0] * len(level_names)
     level_completed = [False] * len(level_names)
     unlocked_levels = [True] + [False] * (len(level_names) - 1)
 
@@ -783,11 +786,11 @@ def draw_3d_surface(Q_val, h_val, azim, elev):
         fig_3d = plt.figure(figsize=(6, 5), dpi=100)
     ax_3d = fig_3d.add_subplot(111, projection='3d',computed_zorder=False)
     fig_3d.subplots_adjust(left=0.15, right=0.85, bottom=0.2)
-    Q = np.linspace(0, 10000, 50)
-    h = np.linspace(0, 100, 50)
+    Q = np.linspace(0, 10000, 20)
+    h = np.linspace(0, 100, 20)
     Q_grid, h_grid = np.meshgrid(Q, h)
     P_grid = 0.00007 * Q_grid * h_grid
-    ax_3d.plot_surface(Q_grid, h_grid, P_grid, cmap='Blues', alpha=0.9)
+    ax_3d.plot_surface(Q_grid, h_grid, P_grid, cmap='viridis', alpha=0.9)
     P_val = 0.00007 * Q_val * h_val
     scatter = ax_3d.scatter(Q_val, h_val, P_val, color='red', s=50,depthshade=False)
     ax_3d.set_xlabel("Flow Rate Q (cfs)", labelpad=10)
@@ -832,7 +835,7 @@ def draw_colormap(Q_val, h_val):
     P_grid = 0.00007 * Q_grid * h_grid
     cmap = plt.get_cmap('viridis')
     c = ax_colormap.pcolormesh(Q_grid, h_grid, P_grid, shading='auto', cmap=cmap)
-    fig_colormap.colorbar(c, ax=ax_colormap, label="Power (kW)")
+    fig_colormap.colorbar(c, ax=ax_colormap, label="Power P (MW)")
     red_dot = ax_colormap.plot(Q_val, h_val, 'ro')[0]
     ax_colormap.set_xlabel("Flow Rate Q (cfs)")
     ax_colormap.xaxis.set_major_formatter(mticker.StrMethodFormatter('{x:,.0f}'))
@@ -903,8 +906,8 @@ def draw_controls_page_ROR(screen, show_pressed_keys, show_blinking_rect):
 
     # Fonts relative to height
     pygame.font.init()
-    title_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.09))
-    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.045))
+    title_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), int(SCREEN_HEIGHT * 0.09))
+    caption_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), int(SCREEN_HEIGHT * 0.045))
 
     # Background
     background = load_image("assets/RoRStatics/RoRStatic.jpg")
@@ -1006,7 +1009,7 @@ def reset_RoR():
     }
 
 def update_RoR_graph(x_start=0, x_end=5, power_data=[], display=0,mode=0):
-    global LOAD_CURVE
+    global LOAD_CURVE, SCREEN_WIDTH
     x = np.linspace(x_start, x_end, 100)
     power_x = np.linspace(x_start, x_start + 0.5, len(power_data))
     plt.figure(figsize=(4, 3), facecolor=(0, 0, 0, 0))
@@ -1020,9 +1023,10 @@ def update_RoR_graph(x_start=0, x_end=5, power_data=[], display=0,mode=0):
     plt.axis('off')
 
     if mode == 0:
-        legend = plt.legend(loc='upper right', facecolor='none', edgecolor='none', fontsize=14)
+        legend = plt.legend(loc='upper right', facecolor='none', edgecolor='none', prop=prop)
     elif mode == 2:
-        legend = plt.legend(loc='lower left', facecolor='none', edgecolor='none', fontsize=14)
+        legend = plt.legend(loc='lower left', facecolor='none', edgecolor='none', prop=prop)
+
     for text in legend.get_texts():
         text.set_color('white')
 
@@ -1032,21 +1036,6 @@ def update_RoR_graph(x_start=0, x_end=5, power_data=[], display=0,mode=0):
     plt.close()
     return temp_file.name
 
-def path_points(center, R, theta0, beta_deg, n=20, k=-0.1):
-    cx, cy = center
-    beta = np.radians(beta_deg)
-    # Guard against beta ~ 0°
-    cot_beta = 1.0 / np.tan(beta) if beta_deg > 0.1 else 1e6
-    pts = []
-    for i in range(n+1):
-        t = i / n  # 0..1
-        r = R * t
-        theta = theta0 - k * (1 - t) * cot_beta
-        x = cx + r * np.cos(theta*np.pi/180)
-        y = cy + r * np.sin(theta*np.pi/180)
-        pts.append((x, y))
-    return pts
-
 # --- Dam Level Functions ---
 def draw_controls_page_dam(screen, show_pressed_keys, show_blinking_rect):
     # Colors
@@ -1054,8 +1043,8 @@ def draw_controls_page_dam(screen, show_pressed_keys, show_blinking_rect):
 
     # Fonts relative to height
     pygame.font.init()
-    title_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.09))
-    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.045))
+    title_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.09))
+    caption_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), int(SCREEN_HEIGHT * 0.045))
 
     # Background
     background = load_image("assets/DamSequences/DamStatics/DamStatics.jpg")
@@ -1132,10 +1121,10 @@ def update_dam_graph(x_start=0, x_end=5, power_data=[], display=0):
     indices = (np.arange(display, display + 100) % len(LOAD_CURVE))
     plt.plot(x, (LOAD_CURVE[indices]/6)-15, label='Load Curve', color='white')
     plt.xlim(x_start, x_end)
-    plt.ylim(0, 100)
+    plt.ylim(-5, 100)
     plt.axis('off')
 
-    legend = plt.legend(loc='upper right', facecolor='none', edgecolor='none', fontsize=14)
+    legend = plt.legend(loc='upper right', facecolor='none', edgecolor='none', prop=prop, fontsize=14)
     for text in legend.get_texts():
         text.set_color('white')
 
@@ -1188,7 +1177,7 @@ def draw_dam_colormap(Q_val, h_val):
     P_grid = (Q_grid * g * h_grid)/40
     cmap = plt.get_cmap('viridis')
     c = ax_colormap.pcolormesh(Q_grid, h_grid, P_grid, shading='auto', cmap=cmap)
-    cbar = fig_colormap.colorbar(c, ax=ax_colormap, label="Power (MW)")
+    cbar = fig_colormap.colorbar(c, ax=ax_colormap, label="Power P (MW)")
     cbar.ax.yaxis.label.set_color("white")
     cbar.set_ticks([])
     cbar.outline.set_edgecolor("white")
@@ -1223,8 +1212,8 @@ def draw_controls_page_PSH(screen, show_pressed_keys, show_blinking_rect):
 
     # Fonts relative to height
     pygame.font.init()
-    title_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.09))
-    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.045))
+    title_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.09))
+    caption_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), int(SCREEN_HEIGHT * 0.045))
 
     # Background
     background = load_image("assets/PSHSequences/PSHStatics/PSHStatics.jpg")
@@ -1302,7 +1291,7 @@ def update_psh_graph(x_start=0, x_end=5, power_data=[], display=0):
     plt.ylim(-100, 100)
     plt.axis('off')
 
-    legend = plt.legend(loc='upper right', facecolor='none', edgecolor='none', fontsize=14)
+    legend = plt.legend(loc='upper right', facecolor='none', edgecolor='none', prop=prop, fontsize=14)
     for text in legend.get_texts():
         text.set_color('white')
 
@@ -1360,8 +1349,9 @@ def reset_env():
         'screen': 0,
         'clock': 0, 
         'running': True,
-        'font': pygame.font.SysFont("arial", 24),
-        'large_font': pygame.font.SysFont("arial", 32),
+        'font': None,
+        'large_font': None,
+        'button_font': None,
     # Flags and messages.
         'show_instructions': False,
         'message': "",
@@ -1409,8 +1399,9 @@ def update_layout(game):
     game['window_width'], game['window_height'] = game['screen'].get_size()
     new_font_size = max(12, int(game['window_height'] / 50))
     new_large_font_size = max(16, int(game['window_height'] / 32))
-    game['font'] = pygame.font.SysFont("arial", new_font_size)
-    game['large_font'] = pygame.font.SysFont("arial", new_large_font_size)
+    game['font'] = pygame.font.Font(resource_path("assets/Fonts/Electrolize-Regular.ttf"), new_font_size)
+    game['button_font'] = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), new_font_size)
+    game['large_font'] = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), new_large_font_size)
 
     game['instructions_area'] = pygame.Rect(int(game['window_width'] * 0.04),
                                             int(game['window_height'] * 0.01),
@@ -1682,7 +1673,7 @@ def draw_buttons(game):
         display_label = label
         if label == "Dark Mode":
             display_label = f"Dark Mode: {'On' if game['dark_mode'] else 'Off'}"
-        text = game['font'].render(display_label, True, get_text_color(game))
+        text = game['button_font'].render(display_label, True, get_text_color(game))
         text_rect = text.get_rect(center=scaled_rect.center)
         screen.blit(text, text_rect)
 
@@ -1708,7 +1699,7 @@ def draw_buttons(game):
     scaled_exit_rect.center = exit_rect_orig.center
     pygame.draw.rect(screen, (200, 0, 0), scaled_exit_rect)  # Red fill.
     pygame.draw.rect(screen, (255, 255, 255), scaled_exit_rect, 2)  # White outline.
-    exit_text = game['font'].render("Exit", True, (255, 255, 255))
+    exit_text = game['button_font'].render("Exit", True, (255, 255, 255))
     exit_text_rect = exit_text.get_rect(center=scaled_exit_rect.center)
     screen.blit(exit_text, exit_text_rect)
 
@@ -1738,7 +1729,7 @@ def draw_message(game):
         game['try_again_button_rect'] = pygame.Rect(btn_x, btn_y, btn_width, btn_height)
         pygame.draw.rect(game['screen'], get_button_color(game), game['try_again_button_rect'])
         pygame.draw.rect(game['screen'], get_button_outline_color(game), game['try_again_button_rect'], 2)
-        btn_text = game['font'].render(btn_label, True, get_text_color(game))
+        btn_text = game['button_font'].render(btn_label, True, get_text_color(game))
         btn_text_rect = btn_text.get_rect(center=game['try_again_button_rect'].center)
         game['screen'].blit(btn_text, btn_text_rect)
         if game.get('level_complete'):
@@ -1750,7 +1741,7 @@ def draw_message(game):
             game['level_complete_button_rect'] = pygame.Rect(lc_btn_x, lc_btn_y, lc_btn_width, lc_btn_height)
             pygame.draw.rect(game['screen'], get_button_color(game), game['level_complete_button_rect'])
             pygame.draw.rect(game['screen'], get_button_outline_color(game), game['level_complete_button_rect'], 2)
-            lc_text = game['font'].render(lc_label, True, get_text_color(game))
+            lc_text = game['button_font'].render(lc_label, True, get_text_color(game))
             lc_text_rect = lc_text.get_rect(center=game['level_complete_button_rect'].center)
             game['screen'].blit(lc_text, lc_text_rect)
 
@@ -1770,7 +1761,7 @@ def handle_button_click(game, pos):
             return
         
 def start_action(game):
-    game['y_values'] = 0.2 * np.ones(N_timesteps)
+    game['y_values'] = (TARGET/24) * np.ones(24)
     game['solution_checked'] = False
     game['start_time'] = time.time()
     game['message'] = ""
@@ -1887,9 +1878,9 @@ doe_logo = pygame.transform.smoothscale(doe_logo, (int(doe_logo.get_width() * lo
 # --- Opening screen ---
 def opening_screen(background, argonne_logo, nrel_logo, doe_logo):
     # Fonts
-    font = pygame.font.SysFont("arial", 50, bold=True)
-    title_font = pygame.font.SysFont("arial", 160, bold=True)
-    prompt_font = pygame.font.SysFont("arial", 40, bold=True)
+    font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), 50)
+    title_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), 140)
+    prompt_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), 40)
 
     # Text surfaces
     developed_text = font.render("An educational tool developed by", True, (255, 255, 255))
@@ -2054,8 +2045,8 @@ def main_menu():
         menu_items = ["New Game", "Settings", "Credits"]
     running = True
     while running:
-        title_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.07), bold=True)
-        button_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.04), bold=True)
+        title_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.07))
+        button_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.038))
 
         # Title text (top-left)
         title_text = title_font.render("Main Menu", True, (255, 255, 255))
@@ -2159,9 +2150,9 @@ def main_menu():
                         if label == "New Game":
                             new_game()
                             character_select()
-                            level_select()
                         elif label == "Continue Game":
                             if has_save_file:
+                                load_game_data()
                                 level_select()
                         elif label == "Settings":
                             settings_screen()
@@ -2215,6 +2206,15 @@ def character_select():
     if not cap.isOpened():
         print("Failed to open video.")
         sys.exit(1)
+
+    button_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
+    exit_width = SCREEN_WIDTH * 0.15
+    exit_height = SCREEN_HEIGHT * 0.06
+    exit_rect = pygame.Rect(SCREEN_WIDTH * 0.765, SCREEN_HEIGHT * 0.92, exit_width, exit_height)
+    exit_frame = pygame.transform.smoothscale(border_frame, (int(exit_width), int(exit_height)))
+    exit_red_frame = tint_surface(exit_frame, (255, 0, 0))
+    exit_text = button_font.render("Exit", True, (255, 255, 255))
+    exit_text_rect = exit_text.get_rect(center=exit_rect.center)
 
     running = True
     while running:
@@ -2289,6 +2289,10 @@ def character_select():
             player_name
         )
         draw_body_preview(body_frames, current_preview_index, body_border_frames[current_preview_index])
+        
+        screen.blit(exit_red_frame, exit_rect)
+        screen.blit(exit_text, exit_text_rect)
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 cap.release()
@@ -2305,11 +2309,15 @@ def character_select():
                     else:
                         selected_character = hovered_index
                         current_preview_index = selected_character
-                if confirm_button_rect and confirm_button_rect.collidepoint(event.pos):
+                elif confirm_button_rect and confirm_button_rect.collidepoint(event.pos):
                     # Only accept confirm if valid selection and name entered
                     if selected_character != 4 and player_name.strip() != "":
                         save_game_data()
-                        running = False
+                        cap.release()
+                        level_select()
+                elif exit_rect.collidepoint(event.pos):
+                    cap.release()
+                    main_menu()
             elif event.type == pygame.MOUSEMOTION:
                 ignore_mouse_hover_until_move = False
             elif event.type == pygame.KEYDOWN and name_input_active:
@@ -2328,7 +2336,7 @@ def character_select():
         clock.tick(60)
 
 def level_select():
-    global SCREEN_WIDTH, SCREEN_HEIGHT, screen, level_names, level_completed, selected_character, unlocked_levels, level_scores
+    global SCREEN_WIDTH, SCREEN_HEIGHT, screen, level_names, level_completed, selected_character, unlocked_levels, level_scores, has_save_file
 
     max_body_height = int(SCREEN_HEIGHT * 0.8)
     body_image = load_image(f"assets/CYC_Assets/Bodies/B{selected_character}.jpg")
@@ -2349,7 +2357,7 @@ def level_select():
         print("Failed to open background video.")
         sys.exit(1)
 
-    name_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.035), bold=True)
+    name_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
     name_text = name_font.render(player_name, True, (255, 255, 255))
 
     preview_x = SCREEN_WIDTH - body_image.get_width() - int(SCREEN_WIDTH * 0.05)
@@ -2357,9 +2365,9 @@ def level_select():
     text_x = preview_x + (body_image.get_width() - name_text.get_width()) // 2
     text_y = preview_y + int(body_image.get_height() * 0.85)
 
-    title_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.06), bold=True)
-    level_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.025), bold=True)
-    button_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    title_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.06))
+    level_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.025))
+    button_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
 
     title_text = title_font.render("Level Select", True, (255, 255, 255))
     title_rect = title_text.get_rect(center=(SCREEN_WIDTH * 0.25, SCREEN_HEIGHT * 0.15))
@@ -2445,7 +2453,6 @@ def level_select():
             rect = pygame.Rect(start_x, start_y + i * (button_height + spacing),
                                button_width, button_height)
             unlocked = unlocked_levels[i] if i<5 else False
-            completed = level_completed[i]
             high_score = level_scores[i]
 
             if i == selected_level and unlocked:
@@ -2506,8 +2513,9 @@ def level_select():
                             break
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if exit_rect.collidepoint(mouse_pos):
+                    has_save_file = True
                     cap.release()
-                    return
+                    main_menu()
                 for i, (rect, unlocked) in enumerate(level_rects):
                     if rect.collidepoint(mouse_pos) and unlocked:
                         selected_level = i
@@ -2550,8 +2558,8 @@ def settings_screen():
     running = True
     while running:
         # Fonts
-        category_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.06), bold=True)
-        button_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.04), bold=True)
+        category_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.06))
+        button_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.04))
 
         # Text
         resolution_text = category_font.render("Resolution", True, (255, 255, 255))
@@ -2657,8 +2665,8 @@ def settings_screen():
 
 def credits_screen():
     # Fonts
-    text_font = pygame.font.SysFont(None, int(SCREEN_HEIGHT * 0.025))
-    button_font = pygame.font.SysFont(None, int(SCREEN_HEIGHT * 0.03), bold=True)
+    text_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.025))
+    button_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
 
     # Your credits text from the document
     credits_text_str = """Credits and Legal Information
@@ -2668,7 +2676,8 @@ Copyright Notice
 © COPYRIGHT (2025) UChicago Argonne, LLC
 
 This game, including all its code, graphics, sounds, music, and other associated assets, is the intellectual property of UChicago Argonne, LLC. 
-Any unauthorized reproduction, distribution, or modification of this game or any portion thereof is strictly prohibited and may result in severe civil and criminal penalties.
+Any unauthorized reproduction, distribution, or modification of this game or any portion thereof is strictly prohibited 
+and may result in severe civil and criminal penalties.
 
 Beta Version Disclaimer
 
@@ -2678,25 +2687,27 @@ A more definitive and comprehensive license agreement will be provided upon the 
 
 Disclaimers
 
-As-Is Basis: This game is provided "as is" without warranty of any kind, either express or implied, including, but not limited to, the implied warranties of merchantability, 
+As-Is Basis: This game is provided "as is" without warranty of any kind, 
+either express or implied, including, but not limited to, the implied warranties of merchantability, 
 fitness for a particular purpose, or non-infringement.
 
 Limitation of Liability: In no event shall UChicago Argonne, LLC be liable for any direct, indirect, incidental, special, exemplary, or consequential damages 
 (including, but not limited to, procurement of substitute goods or services; loss of use, data, or profits; or business interruption) 
-however caused and on any theory of liability, whether in contract, strict liability, or tort (including negligence or otherwise) arising in any way out of the use of this game, 
-even if advised of the possibility of such damage.
+however caused and on any theory of liability, whether in contract, strict liability, or tort (including negligence or otherwise) 
+arising in any way out of the use of this game, even if advised of the possibility of such damage.
 
 Third-Party Resources and Acknowledgments
 
-We extend our sincere gratitude to the following individuals, organizations, and resources whose contributions and publicly available information have been 
-invaluable in the development of the Hydropower game.
+We extend our sincere gratitude to the following individuals, organizations, and resources whose contributions and publicly available information have 
+been invaluable in the development of the game.
 
 Research & Data Sources:
 
 REDi Island project: https://www.nrel.gov/water/redi-island
 
-The REDi Island project's contribution to this game builds upon their previous collaborative work with IKM, from whom they sourced 3D models. Specifically:
+The REDi Island project's contribution to this game builds upon their previous collaborative work with IKM, from whom they sourced 3D models. 
 
+Specifically:
 3D Modeling & Animation:
 
 IKM Testing UK - For their expertise and contribution in 3D animation: https://www.ikm.com/ikm-testing-uk/3d-animation/
@@ -2737,7 +2748,7 @@ License: Apache License 2.0
 Copyright: Google LLC
 URL: https://developers.google.com/optimization/
 
-Thank you for playing Hydropower Game!
+Thank you for playing!
 """
 
     # Split text into lines
@@ -2880,7 +2891,7 @@ def Hydropower_Model():
                             Continue_width, Continue_height)
     Continue_frame = pygame.transform.smoothscale(border_frame, (int(Continue_width), int(Continue_height)))
     Continue_green_frame = tint_surface(Continue_frame, (0, 200, 0))
-    Continue_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    Continue_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
     Continue_text = Continue_font.render("Continue", True, (255, 255, 255))
     Continue_text_rect = Continue_text.get_rect(center=Continue_rect.center)
 
@@ -3044,9 +3055,9 @@ def RoR_Exploration():
     turbine_image = pygame.transform.smoothscale(turbine_image, (turbine_image.get_width() * 0.09 * (SCREEN_WIDTH / 1280),
                                                                  turbine_image.get_height() * 0.09 * (SCREEN_HEIGHT / 720)))
 
-    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.045))
-    name_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
-    description_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03))
+    caption_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), int(SCREEN_HEIGHT * 0.045))
+    name_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
+    description_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), int(SCREEN_HEIGHT * 0.03))
 
     # Frame and gate scaling
     angles = [220 - i * 360 / NUM_OVALS for i in range(NUM_OVALS)]
@@ -3069,7 +3080,7 @@ def RoR_Exploration():
         for i in range(NUM_OVALS)
     ]
 
-    gate_caption = caption_font.render("Wicket Gate Display", True, (255, 255, 255))
+    gate_caption = caption_font.render("Turbine Display", True, (255, 255, 255))
     exploration_directions = caption_font.render("Explore the components by clicking on them!", True, (255, 255, 255))
 
     graph_width = (1200 * SCREEN_WIDTH / 1920) / 2.8
@@ -3124,7 +3135,7 @@ def RoR_Exploration():
                             Continue_width, Continue_height)
     Continue_frame = pygame.transform.smoothscale(border_frame, (int(Continue_width), int(Continue_height)))
     Continue_green_frame = tint_surface(Continue_frame, (0, 200, 0))
-    Continue_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    Continue_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
     Continue_text = Continue_font.render("Continue", True, (255, 255, 255))
     Continue_text_rect = Continue_text.get_rect(center=Continue_rect.center)
 
@@ -3201,7 +3212,7 @@ def Load_Instructions(level_number):
         background = load_image('assets/PSHSequences/PSHStatics/PSHStatics.jpg')
     background = pygame.transform.smoothscale(background, (SCREEN_WIDTH, SCREEN_HEIGHT))
 
-    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.05))
+    caption_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), int(SCREEN_HEIGHT * 0.05))
     caption_text = caption_font.render("Use the hydropower generation to follow the electricity load!", True, (255, 255, 255))
 
     # Continue button setup
@@ -3212,7 +3223,7 @@ def Load_Instructions(level_number):
                             Continue_width, Continue_height)
     Continue_frame = pygame.transform.smoothscale(border_frame, (int(Continue_width), int(Continue_height)))
     Continue_green_frame = tint_surface(Continue_frame, (0, 200, 0))
-    Continue_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    Continue_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
     Continue_text = Continue_font.render("Continue", True, (255, 255, 255))
     Continue_text_rect = Continue_text.get_rect(center=Continue_rect.center)
     example_input = []
@@ -3288,11 +3299,11 @@ def RoR_Controls():
                             Continue_width, Continue_height)
     Continue_frame = pygame.transform.smoothscale(border_frame, (int(Continue_width), int(Continue_height)))
     Continue_green_frame = tint_surface(Continue_frame, (0, 200, 0))
-    Continue_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    Continue_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
     Continue_text = Continue_font.render("Continue", True, (255, 255, 255))
     Continue_text_rect = Continue_text.get_rect(center=Continue_rect.center)
 
-    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.045))
+    caption_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), int(SCREEN_HEIGHT * 0.045))
     loading_text = caption_font.render("Loading...", True, (255, 255, 255))
 
     clock = pygame.time.Clock()
@@ -3383,14 +3394,14 @@ def RoR_Level():
     ]
 
     if SCREEN_WIDTH == 960:
-        performance_font = pygame.font.SysFont(None, 24)
-        complete_font = pygame.font.SysFont(None, 48)
+        performance_font = pygame.font.Font(resource_path("assets/Fonts/Electrolize-Regular.ttf"), 20)
+        complete_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), 42)
     elif SCREEN_WIDTH == 1280:
-        performance_font = pygame.font.SysFont(None, 36)
-        complete_font = pygame.font.SysFont(None, 72)
+        performance_font = pygame.font.Font(resource_path("assets/Fonts/Electrolize-Regular.ttf"), 30)
+        complete_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), 64)
     elif SCREEN_WIDTH == 1600:
-        performance_font = pygame.font.SysFont(None, 48)
-        complete_font = pygame.font.SysFont(None, 96)
+        performance_font = pygame.font.Font(resource_path("assets/Fonts/Electrolize-Regular.ttf"), 40)
+        complete_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), 84)
 
     # Exit button setup (bottom right)
     exit_width = SCREEN_WIDTH * 0.15
@@ -3400,7 +3411,7 @@ def RoR_Level():
                             exit_width, exit_height)
     exit_frame = pygame.transform.smoothscale(border_frame, (int(exit_width), int(exit_height)))
     exit_red_frame = tint_surface(exit_frame, (255, 0, 0))
-    exit_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    exit_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
     exit_text = exit_font.render("Exit", True, (255, 255, 255))
     exit_text_rect = exit_text.get_rect(center=exit_rect.center)
 
@@ -3412,7 +3423,7 @@ def RoR_Level():
                             skip_width, skip_height)
     skip_frame = pygame.transform.smoothscale(border_frame, (int(skip_width), int(skip_height)))
     skip_green_frame = tint_surface(skip_frame, (0, 200, 0))
-    skip_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    skip_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
     skip_text = skip_font.render("Skip", True, (255, 255, 255))
     skip_text_rect = skip_text.get_rect(center=skip_rect.center)
 
@@ -3470,7 +3481,7 @@ def RoR_Level():
 
             screen.blit(scaled_panel, (0, SCREEN_HEIGHT * .8))
 
-            rotation_status = f"Rotation: {game_state['rotation']} degrees"
+            rotation_status = f"Wicket Gate Angle: {game_state['rotation']}°"
             release_status = f"Current Release: {game_state['release']} cfs"
             power_status = f"Power Generated: {power_generated} MW"
 
@@ -3489,7 +3500,7 @@ def RoR_Level():
 
             screen.blit(scaled_frame, (frame_x, frame_y))
 
-            label_surface = performance_font.render("Wicket Gate Display", True, (255, 255, 255))
+            label_surface = performance_font.render("Turbine Display", True, (255, 255, 255))
             label_rect = label_surface.get_rect(center=(frame_x + frame_size / 2, frame_y - SCREEN_HEIGHT * 0.015))
             screen.blit(label_surface, label_rect)
 
@@ -3525,9 +3536,8 @@ def RoR_Level():
             power_index += 1
             game_state['score'] += load_difference
 
-            screen.blit(performance_font.render(f"Average Power Imbalance: {(game_state['score']/power_index):.2f} MW", True, (255, 255, 255)), (SCREEN_WIDTH * 0.6, frame_y - SCREEN_HEIGHT * 0.0325))
-            screen.blit(performance_font.render(f"Total Duration: {ROR_LEVEL_DURATION} sec", True, (255, 255, 255)), (SCREEN_WIDTH * 0.3, frame_y - SCREEN_HEIGHT * 0.0325))
-            screen.blit(performance_font.render(f"Elapsed Time: {int(game_state['elapsed_time'])} sec", True, (255, 255, 255)), (SCREEN_WIDTH * 0.3, frame_y - SCREEN_HEIGHT * 0.0025))
+            screen.blit(performance_font.render(f"Average Power Imbalance: {(game_state['score']/power_index):.2f} MW", True, (255, 255, 255)), (SCREEN_WIDTH * 0.55, frame_y - SCREEN_HEIGHT * 0.04))
+            screen.blit(performance_font.render(f"Time Remaining: {ROR_LEVEL_DURATION-int(game_state['elapsed_time'])} sec", True, (255, 255, 255)), (SCREEN_WIDTH * 0.25, frame_y - SCREEN_HEIGHT * 0.04))
             game_state['elapsed_time'] += clock.tick(60) / 1000.0
             # Check for level completion
             if game_state['elapsed_time'] >= ROR_LEVEL_DURATION:
@@ -3634,9 +3644,9 @@ def Dam_Exploration():
 
     covered = True
 
-    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.045))
-    name_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
-    description_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03))
+    caption_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), int(SCREEN_HEIGHT * 0.045))
+    name_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
+    description_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), int(SCREEN_HEIGHT * 0.03))
 
     exploration_directions = caption_font.render("Explore the components by clicking on them!", True, (255, 255, 255))
 
@@ -3697,7 +3707,7 @@ def Dam_Exploration():
                             Continue_width, Continue_height)
     Continue_frame = pygame.transform.smoothscale(border_frame, (int(Continue_width), int(Continue_height)))
     Continue_green_frame = tint_surface(Continue_frame, (0, 200, 0))
-    Continue_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    Continue_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
     Continue_text = Continue_font.render("Continue", True, (255, 255, 255))
     Continue_text_rect = Continue_text.get_rect(center=Continue_rect.center)
 
@@ -3780,11 +3790,11 @@ def Dam_Controls():
                             Continue_width, Continue_height)
     Continue_frame = pygame.transform.smoothscale(border_frame, (int(Continue_width), int(Continue_height)))
     Continue_green_frame = tint_surface(Continue_frame, (0, 200, 0))
-    Continue_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    Continue_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
     Continue_text = Continue_font.render("Continue", True, (255, 255, 255))
     Continue_text_rect = Continue_text.get_rect(center=Continue_rect.center)
 
-    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.045))
+    caption_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), int(SCREEN_HEIGHT * 0.045))
     loading_text = caption_font.render("Loading...", True, (255, 255, 255))
 
     clock = pygame.time.Clock()
@@ -3902,8 +3912,8 @@ def Dam_Level():
     scaled_panel.set_alpha(127)
 
     # Set the font size relative to control panel height
-    panel_font_size = int(panel_height * 0.15)
-    panel_font = pygame.font.SysFont(None, panel_font_size)
+    panel_font_size = int(panel_height * 0.1)
+    panel_font = pygame.font.Font(resource_path("assets/Fonts/Electrolize-Regular.ttf"), panel_font_size)
 
     water_level_text = "Reservoir Water Level"
 
@@ -3920,7 +3930,7 @@ def Dam_Level():
                             exit_width, exit_height)
     exit_frame = pygame.transform.smoothscale(border_frame, (int(exit_width), int(exit_height)))
     exit_red_frame = tint_surface(exit_frame, (255, 0, 0))
-    exit_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    exit_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
     exit_text = exit_font.render("Exit", True, (255, 255, 255))
     exit_text_rect = exit_text.get_rect(center=exit_rect.center)
 
@@ -3932,10 +3942,15 @@ def Dam_Level():
                             skip_width, skip_height)
     skip_frame = pygame.transform.smoothscale(border_frame, (int(skip_width), int(skip_height)))
     skip_green_frame = tint_surface(skip_frame, (0, 200, 0))
-    skip_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    skip_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
     skip_text = skip_font.render("Skip", True, (255, 255, 255))
     skip_text_rect = skip_text.get_rect(center=skip_rect.center)
 
+    performance_x = SCREEN_WIDTH*0.01
+    performance_y = SCREEN_HEIGHT*0.05  
+
+    score_x = SCREEN_WIDTH*0.01
+    score_y = SCREEN_HEIGHT*0.09
 
     # Load electricity image
     light_image = load_image("assets/Light.png")
@@ -4119,19 +4134,18 @@ def Dam_Level():
     light19_index = 12
     light20_index = 16
 
-
     if SCREEN_WIDTH == 960:
-        performance_font = pygame.font.SysFont(None, 24)
-        complete_font = pygame.font.SysFont(None, 48)
-        warning_font = pygame.font.SysFont(None, 24, bold=True)
+        performance_font = pygame.font.Font(resource_path("assets/Fonts/Electrolize-Regular.ttf"), 18)
+        complete_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), 42)
+        warning_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), 20)
     elif SCREEN_WIDTH == 1280:
-        performance_font = pygame.font.SysFont(None, 36)
-        complete_font = pygame.font.SysFont(None, 72)
-        warning_font = pygame.font.SysFont(None, 36, bold=True)
+        performance_font = pygame.font.Font(resource_path("assets/Fonts/Electrolize-Regular.ttf"), 27)
+        complete_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), 64)
+        warning_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), 30)
     elif SCREEN_WIDTH == 1600:
-        performance_font = pygame.font.SysFont(None, 48)
-        complete_font = pygame.font.SysFont(None, 96)
-        warning_font = pygame.font.SysFont(None, 48, bold=True)
+        performance_font = pygame.font.Font(resource_path("assets/Fonts/Electrolize-Regular.ttf"), 36)
+        complete_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), 84)
+        warning_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), 40)
 
     heatmap_frame = pygame.transform.smoothscale(border_frame, (SCREEN_WIDTH*0.25, SCREEN_HEIGHT*0.35))
     scaled_score = 0
@@ -4350,18 +4364,14 @@ def Dam_Level():
             game_state['x_end'] += 0.05
 
             # Display the water wasted
-
             waste_status = f"Average Water Spilled: {int(2000*(game_state['wasted_water']/game_state['elapsed_time']))} cfs"
             waste_label = performance_font.render(waste_status, True, (255, 255, 255))
-            screen.blit(waste_label, (SCREEN_WIDTH - waste_label.get_width(), SCREEN_HEIGHT*0.0167))
+            screen.blit(waste_label, (SCREEN_WIDTH*0.01, SCREEN_HEIGHT*0.13))
 
             # Display elapsed time
-            time_status = f"Time Elapsed: {int(game_state['elapsed_time'])} sec"
-            time_max = f"Total Duration: {DAM_LEVEL_DURATION} sec"
+            time_status = f"Time Remaining: {DAM_LEVEL_DURATION - int(game_state['elapsed_time'])} sec"
             time_label = performance_font.render(time_status, True, (255, 255, 255))
-            max_label = performance_font.render(time_max, True, (255, 255, 255))
-            screen.blit(time_label, (SCREEN_WIDTH*0.0125, SCREEN_HEIGHT*0.0167))
-            screen.blit(max_label, (SCREEN_WIDTH*0.0125, SCREEN_HEIGHT*0.0567))
+            screen.blit(time_label, (SCREEN_WIDTH*0.01, SCREEN_HEIGHT*0.01))
 
             # Calculate the load difference
             load_difference = truncate_float(power_generated - ((LOAD_CURVE[(display+10)%240]/6)-15), 2)
@@ -4371,11 +4381,6 @@ def Dam_Level():
             # Render the load difference text
             performance_text = f"Real-Time Power Imbalance: {scaled_load_difference:.2f} MW"
             performance_label = performance_font.render(performance_text, True, (255, 255, 255))
-
-            # Calculate the position to center the text at the top of the screen
-            if first_run:
-                performance_x = (SCREEN_WIDTH - performance_label.get_width()) // 2
-                performance_y = SCREEN_HEIGHT*0.0167  # Adjust the y-position as needed
 
             # Blit the performance label to the screen
             screen.blit(performance_label, (performance_x, performance_y))
@@ -4388,11 +4393,6 @@ def Dam_Level():
             # Render the score text
             score_text = f"Average Power Imbalance: {(scaled_score/power_info_counter):.2f} MW"
             score_label = performance_font.render(score_text, True, (255, 255, 255))
-
-            # Calculate the position to display the score
-            if first_run:
-                score_x = (SCREEN_WIDTH - score_label.get_width()) // 2
-                score_y = performance_y + performance_label.get_height() + SCREEN_HEIGHT*0.0167  # Position below the load difference
 
             # Blit the score label to the screen
             screen.blit(score_label, (score_x, score_y))
@@ -4441,7 +4441,7 @@ def Dam_Level():
                 x = start_x + i * (square_size + spacing_between_squares)
                 screen.blit(gate_surface, (x, start_y))
 
-            screen.blit(bar_image, (int(SCREEN_WIDTH * 0.292), int(SCREEN_HEIGHT * 0.83)))
+            screen.blit(bar_image, (int(SCREEN_WIDTH * 0.285), int(SCREEN_HEIGHT * 0.83)))
 
             # Decide whether buttons should be active
             all_open = all(g == 1 for g in game_state['gates'])
@@ -4466,7 +4466,7 @@ def Dam_Level():
                 dam_heatmap = draw_dam_colormap(game_state['active_outer_flow'], bar_index)
             else:
                 dam_heatmap = update_dam_colormap(game_state['active_outer_flow'], bar_index)
-            heatmap_rect = dam_heatmap.get_rect(center=(SCREEN_WIDTH// 7, int(0.57 * SCREEN_HEIGHT)))
+            heatmap_rect = dam_heatmap.get_rect(center=(SCREEN_WIDTH // 7, int(0.57 * SCREEN_HEIGHT)))
             if SCREEN_WIDTH == 960:
                 screen.blit(heatmap_frame, (heatmap_rect.x - heatmap_frame.get_width()//2 + dam_heatmap.get_width()//2 - SCREEN_WIDTH*.0025, heatmap_rect.y - heatmap_frame.get_height()//2 + dam_heatmap.get_height()//2))
             elif SCREEN_WIDTH == 1280:
@@ -4586,9 +4586,9 @@ def PSH_Exploration():
     upper_reservoir_image = load_image('assets/PSHSequences/PSHStatics/UpperReservoirStatics.jpg')
     upper_reservoir_image = pygame.transform.scale(upper_reservoir_image, ((upper_reservoir_image.get_width() * SCREEN_WIDTH / 1920)/2.5, (upper_reservoir_image.get_height() * SCREEN_HEIGHT / 1080)/2.5))
 
-    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.045))
-    name_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
-    description_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03))
+    caption_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), int(SCREEN_HEIGHT * 0.045))
+    name_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
+    description_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), int(SCREEN_HEIGHT * 0.03))
 
     exploration_directions = caption_font.render("Explore the components by clicking on them!", True, (255, 255, 255))
 
@@ -4657,7 +4657,7 @@ def PSH_Exploration():
                             Continue_width, Continue_height)
     Continue_frame = pygame.transform.smoothscale(border_frame, (int(Continue_width), int(Continue_height)))
     Continue_green_frame = tint_surface(Continue_frame, (0, 200, 0))
-    Continue_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    Continue_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
     Continue_text = Continue_font.render("Continue", True, (255, 255, 255))
     Continue_text_rect = Continue_text.get_rect(center=Continue_rect.center)
 
@@ -4729,11 +4729,11 @@ def PSH_Controls():
                             Continue_width, Continue_height)
     Continue_frame = pygame.transform.smoothscale(border_frame, (int(Continue_width), int(Continue_height)))
     Continue_green_frame = tint_surface(Continue_frame, (0, 200, 0))
-    Continue_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    Continue_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
     Continue_text = Continue_font.render("Continue", True, (255, 255, 255))
     Continue_text_rect = Continue_text.get_rect(center=Continue_rect.center)
 
-    caption_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.045))
+    caption_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), int(SCREEN_HEIGHT * 0.045))
     loading_text = caption_font.render("Loading...", True, (255, 255, 255))
 
     clock = pygame.time.Clock()
@@ -4823,8 +4823,8 @@ def PSH_Level():
     red_panel.set_alpha(127)
     scaled_panel.set_alpha(127)
 
-    panel_font_size = int(panel_height * 0.15)
-    panel_font = pygame.font.Font(None, panel_font_size)
+    panel_font_size = int(panel_height * 0.1)
+    panel_font = pygame.font.Font(resource_path("assets/Fonts/Electrolize-Regular.ttf"), panel_font_size)
 
     label_text = panel_font.render("Upper Reservoir Water Level", True, (255, 255, 255))
     label_x = SCREEN_WIDTH * 0.235
@@ -4928,7 +4928,7 @@ def PSH_Level():
                             exit_width, exit_height)
     exit_frame = pygame.transform.smoothscale(border_frame, (int(exit_width), int(exit_height)))
     exit_red_frame = tint_surface(exit_frame, (255, 0, 0))
-    exit_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    exit_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
     exit_text = exit_font.render("Exit", True, (255, 255, 255))
     exit_text_rect = exit_text.get_rect(center=exit_rect.center)
 
@@ -4940,22 +4940,22 @@ def PSH_Level():
                             skip_width, skip_height)
     skip_frame = pygame.transform.smoothscale(border_frame, (int(skip_width), int(skip_height)))
     skip_green_frame = tint_surface(skip_frame, (0, 200, 0))
-    skip_font = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.03), bold=True)
+    skip_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), int(SCREEN_HEIGHT * 0.03))
     skip_text = skip_font.render("Skip", True, (255, 255, 255))
     skip_text_rect = skip_text.get_rect(center=skip_rect.center)
 
     if SCREEN_WIDTH == 960:
-        performance_font = pygame.font.SysFont(None, 24)
-        complete_font = pygame.font.SysFont(None, 48)
-        warning_font = pygame.font.SysFont(None, 24, bold=True)
+        performance_font = pygame.font.Font(resource_path("assets/Fonts/Electrolize-Regular.ttf"), 20)
+        complete_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), 42)
+        warning_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), 20)
     elif SCREEN_WIDTH == 1280:
-        performance_font = pygame.font.SysFont(None, 36)
-        complete_font = pygame.font.SysFont(None, 72)
-        warning_font = pygame.font.SysFont(None, 36, bold=True)
+        performance_font = pygame.font.Font(resource_path("assets/Fonts/Electrolize-Regular.ttf"), 30)
+        complete_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), 64)
+        warning_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), 30)
     elif SCREEN_WIDTH == 1600:
-        performance_font = pygame.font.SysFont(None, 48)
-        complete_font = pygame.font.SysFont(None, 96)
-        warning_font = pygame.font.SysFont(None, 48, bold=True)
+        performance_font = pygame.font.Font(resource_path("assets/Fonts/Electrolize-Regular.ttf"), 40)
+        complete_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Regular.ttf"), 84)
+        warning_font = pygame.font.Font(resource_path("assets/Fonts/Gudea-Bold.ttf"), 40)
 
     rotated_blue_arrow_1 = pygame.transform.rotozoom(blue_arrow_image, -55, 1.0)
     rotated_blue_arrow_2 = pygame.transform.rotozoom(blue_arrow_image, 125, 1.0)
@@ -5132,7 +5132,7 @@ def PSH_Level():
             bar_index = int((300 - upper_reservoir_frame_index_int) * (1/3))
             bar_index = min(100,bar_index)
             bar_image = bar_frames[bar_index]
-            screen.blit(bar_image, (int(SCREEN_WIDTH * 0.315), int(SCREEN_HEIGHT * 0.83)))
+            screen.blit(bar_image, (int(SCREEN_WIDTH * 0.31), int(SCREEN_HEIGHT * 0.83)))
 
             # Label
             screen.blit(label_text, (label_x, label_y))
@@ -5160,8 +5160,7 @@ def PSH_Level():
             text_surface = performance_font.render(imbalance_text, True, (255, 255, 255))
             screen.blit(text_surface, (SCREEN_WIDTH * 0.01, SCREEN_HEIGHT * 0.02))
 
-            screen.blit(performance_font.render(f"Total Duration: {PSH_LEVEL_DURATION} sec", True, (255, 255, 255)), (SCREEN_WIDTH * 0.4, SCREEN_HEIGHT * 0.02))
-            screen.blit(performance_font.render(f"Elapsed Time: {int(game_state['elapsed_time'])} sec", True, (255, 255, 255)), (SCREEN_WIDTH * 0.65, SCREEN_HEIGHT * 0.02))
+            screen.blit(performance_font.render(f"Time Remaining: {PSH_LEVEL_DURATION-int(game_state['elapsed_time'])} sec", True, (255, 255, 255)), (SCREEN_WIDTH * 0.5, SCREEN_HEIGHT * 0.02))
 
             release_alpha = int(min(255, max(0, abs(release_factor/3) * 255)))
 
@@ -5238,7 +5237,8 @@ def Level4_intro():
         ("Tom",
          "Unregulated hydropower operations can have a significant negative impact on local aquatic "
          "ecosystems, affecting fish populations. We need to follow some operational guidelines to "
-         "minimize these impacts. I'm going to have you manage a release schedule for the day while learning about "
+         "minimize these impacts."),
+         ("Tom", "I'm going to have you manage a release schedule for the day while learning about "
          "the various constraining factors we need to consider while operating a hydropower plant. "),
          ("Tom",
           "Hydropower operators limit the release rate to avoid flooding downstream areas and to protect habitats that depend on stable river flows. "
