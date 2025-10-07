@@ -80,7 +80,8 @@ import matplotlib.ticker as mticker
 import tempfile
 plt.rcParams["axes3d.mouserotationstyle"] = 'azel'
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-from ortools.math_opt.python import mathopt
+# from ortools.math_opt.python import mathopt
+from scipy.optimize import linprog
 import time
 import json
 
@@ -402,20 +403,79 @@ price_values = 40 * np.array(
      28, 30, 32, 35, 40, 45, 42, 38, 35, 30, 25, 22]
 )
 
-model = mathopt.Model(name="game")
-release = [model.add_variable(lb=0.0) for _ in hours]
-model.maximize(sum([release[h] * price_values[h] for h in hours]))
-model.add_linear_constraint(sum([release[h] for h in hours]) == TARGET)
-for h in hours:
-    model.add_linear_constraint(release[h] >= min_release)
-    model.add_linear_constraint(release[h] - release[h - 1] <= max_ramp_up)
-    model.add_linear_constraint(release[h] - release[h - 1] >= -max_ramp_down)
+# model = mathopt.Model(name="game")
+# release = [model.add_variable(lb=0.0) for _ in hours]
+# model.maximize(sum([release[h] * price_values[h] for h in hours]))
+# model.add_linear_constraint(sum([release[h] for h in hours]) == TARGET)
+# for h in hours:
+#     model.add_linear_constraint(release[h] >= min_release)
+#     model.add_linear_constraint(release[h] - release[h - 1] <= max_ramp_up)
+#     model.add_linear_constraint(release[h] - release[h - 1] >= -max_ramp_down)
 
-params = mathopt.SolveParameters(enable_output=False)
-result = mathopt.solve(model, mathopt.SolverType.GLOP, params=params)
+# params = mathopt.SolveParameters(enable_output=False)
+# result = mathopt.solve(model, mathopt.SolverType.GLOP, params=params)
+# optimal_value = 0
+# if result.termination.reason == mathopt.TerminationReason.OPTIMAL:
+#     optimal_value = result.objective_value()
+
+n = len(hours)
+c = -price_values
+A_ub = []
+b_ub = []
+
+# Constraint 1: Min release constraints (-release[h] <= -min_release)
+for h in range(n):
+    row = np.zeros(n)
+    row[h] = -1.0
+    A_ub.append(row)
+    b_ub.append(-min_release)
+
+# Constraint 2: Ramp up constraints (release[h] - release[h-1] <= max_ramp_up)
+for h in range(1, n):
+    row = np.zeros(n)
+    row[h] = 1.0
+    row[h-1] = -1.0
+    A_ub.append(row)
+    b_ub.append(max_ramp_up)
+
+# Constraint 3: Ramp down constraints (release[h-1] - release[h] <= max_ramp_down)
+for h in range(1, n):
+    row = np.zeros(n)
+    row[h-1] = 1.0
+    row[h] = -1.0
+    A_ub.append(row)
+    b_ub.append(max_ramp_down)
+
+# Convert to numpy arrays
+A_ub = np.array(A_ub)
+b_ub = np.array(b_ub)
+
+# Equality constraint: sum(release[h]) == TARGET
+A_eq = np.ones((1, n))
+b_eq = np.array([TARGET])
+
+# Solve the linear program
+result = linprog(
+    c=c,
+    A_ub=A_ub,
+    b_ub=b_ub,
+    A_eq=A_eq,
+    b_eq=b_eq,
+    bounds=(0, None),  # All variables >= 0, no upper bound
+    method='highs'  # Fast, modern solver
+)
+
+# Extract results
 optimal_value = 0
-if result.termination.reason == mathopt.TerminationReason.OPTIMAL:
-    optimal_value = result.objective_value()
+release_solution = None
+
+if result.success:
+    optimal_value = -result.fun  # Negate back for original maximization
+    release_solution = result.x
+    print(f"Optimal value: {optimal_value}")
+    print(f"Release schedule: {release_solution}")
+else:
+    print(f"Optimization failed: {result.message}")
 
 clock = pygame.time.Clock()
 
