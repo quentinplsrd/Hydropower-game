@@ -4,7 +4,7 @@ from PyInstaller.utils.hooks import collect_all
 datas = [('assets', 'assets')]
 binaries = []
 hiddenimports = ['matplotlib.backends.backend_agg']
-tmp_ret = collect_all('ortools')
+# tmp_ret = collect_all('ortools')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
